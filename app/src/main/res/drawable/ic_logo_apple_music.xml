@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Apple Music Circular Badge -->
+    <path
+        android:fillColor="#FA243C"
+        android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2z" />
+    <!-- White Apple Music Double Note -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M16.2,6v6.9c-0.4,-0.2 -0.85,-0.35 -1.35,-0.35 -1.45,0 -2.65,1.2 -2.65,2.65s1.2,2.65 2.65,2.65 2.65,-1.2 2.65,-2.65V8.8l-5,1.2v4.9c-0.4,-0.2 -0.85,-0.35 -1.35,-0.35 -1.45,0 -2.65,1.2 -2.65,2.65s1.2,2.65 2.65,2.65 2.65,-1.2 2.65,-2.65V7.2L16.2,6z" />
+</vector>

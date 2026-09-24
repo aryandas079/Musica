@@ -1,0 +1,6 @@
+{
+  "name": "Musica",
+  "description": "Stream music previews, dynamic lyrics with live translation, multi-platform streaming hubs, and real-time song discovery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
