@@ -61,6 +61,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.example.ui.components.AmbientMusicRecognitionSheet
 import com.example.ui.components.HummingSearchSheet
+import com.example.ui.components.SearchableTopBar
 import com.example.ui.components.VoiceSearchSheet
 import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.runtime.Composable
@@ -187,109 +188,75 @@ fun SearchScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Search Bar with Liquid Glass Effect
+            // Searchable TopBar with External Music API metadata integration
+            SearchableTopBar(
+                query = query,
+                onQueryChanged = onQueryChanged,
+                searchResults = searchResults,
+                isSearching = isSearching,
+                onPlaySong = { song -> onPlaySong(song, searchResults) },
+                onOpenSongDetails = onOpenSongDetails,
+                onVoiceSearchClick = { isVoiceSearchOpen = true },
+                placeholder = "Search songs, artists, metadata..."
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Secondary Audio Recognition Tools (Humming & Ambient)
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .liquidGlassEffect(shape = RoundedCornerShape(28.dp), elevation = 4.dp)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = null,
-                    tint = colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp)
-                )
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Box(modifier = Modifier.weight(1f)) {
-                    if (query.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .liquidGlassEffect(shape = RoundedCornerShape(12.dp), elevation = 1.dp)
+                        .border(1.dp, Color(0xFFA29BFE).copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                        .clickable { isHummingSearchOpen = true }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .testTag("humming_search_button")
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.GraphicEq,
+                            contentDescription = null,
+                            tint = Color(0xFFA29BFE),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Artists, Albums, or Songs...",
-                            fontSize = 15.sp,
-                            color = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            text = "Hum to Search",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = colorScheme.onSurface
                         )
                     }
-
-                    BasicTextField(
-                        value = query,
-                        onValueChange = onQueryChanged,
-                        textStyle = TextStyle(
-                            fontSize = 15.sp,
-                            color = colorScheme.onSurface,
-                            fontWeight = FontWeight.Normal
-                        ),
-                        cursorBrush = SolidColor(colorScheme.primary),
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("search_text_input")
-                    )
                 }
 
-                if (query.isNotEmpty()) {
-                    IconButton(
-                        onClick = { onQueryChanged("") },
-                        modifier = Modifier.size(24.dp)
-                    ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .liquidGlassEffect(shape = RoundedCornerShape(12.dp), elevation = 1.dp)
+                        .border(1.dp, SpotifyGreen.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                        .clickable { isAmbientRecognitionOpen = true }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .testTag("ambient_recognition_button")
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Clear",
-                            tint = colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
+                            imageVector = Icons.Default.Hearing,
+                            contentDescription = null,
+                            tint = SpotifyGreen,
+                            modifier = Modifier.size(16.dp)
                         )
-                    }
-                } else {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        // Voice Search Button
-                        IconButton(
-                            onClick = { isVoiceSearchOpen = true },
-                            modifier = Modifier
-                                .size(32.dp)
-                                .testTag("voice_search_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Mic,
-                                contentDescription = "Voice Search",
-                                tint = colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // Hum to Search Button
-                        IconButton(
-                            onClick = { isHummingSearchOpen = true },
-                            modifier = Modifier
-                                .size(32.dp)
-                                .testTag("humming_search_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.GraphicEq,
-                                contentDescription = "Search with Humming",
-                                tint = Color(0xFFA29BFE),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // Ambient Music Recognition Button
-                        IconButton(
-                            onClick = { isAmbientRecognitionOpen = true },
-                            modifier = Modifier
-                                .size(32.dp)
-                                .testTag("ambient_recognition_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Hearing,
-                                contentDescription = "Recognize Ambient Music",
-                                tint = SpotifyGreen,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Ambient ID",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = colorScheme.onSurface
+                        )
                     }
                 }
             }

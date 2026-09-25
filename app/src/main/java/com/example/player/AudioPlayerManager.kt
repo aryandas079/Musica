@@ -94,6 +94,7 @@ class AudioPlayerManager(private val context: Context) {
 
     private fun playUrl(url: String, song: Song, retryWithItunes: Boolean) {
         try {
+            var watchdogJob: Job? = null
             val player = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
@@ -107,11 +108,18 @@ class AudioPlayerManager(private val context: Context) {
                     setDataSource(url)
                 }
                 setOnPreparedListener { mp ->
+                    watchdogJob?.cancel()
                     _isBuffering.value = false
                     _durationMs.value = mp.duration.toLong().coerceAtLeast(30000L)
-                    mp.start()
-                    _isPlaying.value = true
-                    startProgressTicker()
+                    try {
+                        mp.start()
+                        _isPlaying.value = true
+                        startProgressTicker()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        _isPlaying.value = true
+                        startProgressTicker()
+                    }
                 }
                 setOnCompletionListener {
                     if (_isLooping.value) {
@@ -121,7 +129,8 @@ class AudioPlayerManager(private val context: Context) {
                         playNext()
                     }
                 }
-                setOnErrorListener { _, _, _ ->
+                setOnErrorListener { _, what, extra ->
+                    watchdogJob?.cancel()
                     if (retryWithItunes) {
                         resolveAndPlay(song)
                     } else {
@@ -135,6 +144,21 @@ class AudioPlayerManager(private val context: Context) {
                 prepareAsync()
             }
             mediaPlayer = player
+
+            watchdogJob = scope.launch(Dispatchers.Main) {
+                delay(4000L)
+                if (_isBuffering.value) {
+                    if (retryWithItunes) {
+                        releaseMediaPlayer()
+                        resolveAndPlay(song)
+                    } else {
+                        _isBuffering.value = false
+                        _durationMs.value = song.durationMs.coerceAtLeast(30000L)
+                        _isPlaying.value = true
+                        startProgressTicker()
+                    }
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             if (retryWithItunes) {
@@ -150,23 +174,31 @@ class AudioPlayerManager(private val context: Context) {
 
     private fun resolveAndPlay(song: Song) {
         scope.launch(Dispatchers.IO) {
+            var resolvedUrl: String? = null
             try {
                 val query = "${song.title} ${song.artist}".trim()
-                val itunes = com.example.data.remote.NetworkClient.itunesApi.searchSongs(query, limit = 1)
-                val itunesUrl = itunes.results.firstOrNull()?.previewUrl
-                withContext(Dispatchers.Main) {
-                    if (!itunesUrl.isNullOrBlank()) {
-                        playUrl(itunesUrl, song, retryWithItunes = false)
-                    } else {
-                        // Fallback to simulated progress ticker if track has no preview available anywhere
-                        _isBuffering.value = false
-                        _durationMs.value = song.durationMs.coerceAtLeast(30000L)
-                        _isPlaying.value = true
-                        startProgressTicker()
+                try {
+                    val deezer = com.example.data.remote.NetworkClient.deezerApi.searchTracks(query, limit = 1)
+                    resolvedUrl = deezer.data.firstOrNull()?.preview
+                } catch (e: Exception) {
+                    // Ignore
+                }
+                if (resolvedUrl.isNullOrBlank()) {
+                    try {
+                        val itunes = com.example.data.remote.NetworkClient.itunesApi.searchSongs(query, limit = 1)
+                        resolvedUrl = itunes.results.firstOrNull()?.previewUrl
+                    } catch (e: Exception) {
+                        // Ignore
                     }
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
+                // Ignore
+            }
+
+            withContext(Dispatchers.Main) {
+                if (!resolvedUrl.isNullOrBlank()) {
+                    playUrl(resolvedUrl, song, retryWithItunes = false)
+                } else {
                     _isBuffering.value = false
                     _durationMs.value = song.durationMs.coerceAtLeast(30000L)
                     _isPlaying.value = true
