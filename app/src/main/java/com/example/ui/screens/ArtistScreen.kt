@@ -58,11 +58,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.model.Artist
 import com.example.model.Song
-import com.example.ui.theme.SpotifyGreen
-import com.example.ui.theme.StormBlackBg
-import com.example.ui.theme.StormBlackElevated
-import com.example.ui.theme.WhiteSmoke
-import com.example.ui.theme.WhiteSmokeSoft
+import com.example.ui.theme.*
 import com.example.ui.theme.liquidGlassEffect
 
 @Composable
@@ -72,16 +68,21 @@ fun ArtistScreen(
     artistSongs: List<Song>,
     isLoading: Boolean,
     favoriteSongs: List<Song>,
+    followedArtists: List<Artist> = emptyList(),
     currentPlayingId: Long?,
     isPlaying: Boolean,
     onPlaySong: (Song, List<Song>) -> Unit,
     onOpenSongDetails: (Song) -> Unit,
     onToggleFavorite: (Song) -> Unit,
+    onToggleFollow: ((Artist) -> Unit)? = null,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     currentArtist: Artist? = null
 ) {
     val colorScheme = MaterialTheme.colorScheme
+    val isFollowing = remember(followedArtists, artistName) {
+        followedArtists.any { it.name.equals(artistName, ignoreCase = true) }
+    }
 
     val resolvedImageUrl = remember(artistName, currentArtist, topArtists, artistSongs) {
         val found = currentArtist?.imageUrl
@@ -109,8 +110,6 @@ fun ArtistScreen(
     val displayArtist = currentArtist
         ?: topArtists.firstOrNull { it.name.equals(artistName, ignoreCase = true) }
         ?: Artist(artistName, resolvedImageUrl, "Artist", "Verified Artist")
-
-    var isFollowing by remember { mutableStateOf(false) }
 
     Surface(
         modifier = modifier.fillMaxSize(),
@@ -142,8 +141,8 @@ fun ArtistScreen(
                             .background(
                                 Brush.verticalGradient(
                                     colors = listOf(
-                                        Color.Black.copy(alpha = 0.45f),
-                                        Color(0x8010131C),
+                                        StormBlackBg.copy(alpha = 0.45f),
+                                        StormBlackSurface.copy(alpha = 0.8f),
                                         colorScheme.background
                                     )
                                 )
@@ -168,7 +167,7 @@ fun ArtistScreen(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
-                                tint = Color.White
+                                tint = WhiteSmoke
                             )
                         }
 
@@ -181,7 +180,7 @@ fun ArtistScreen(
                             Icon(
                                 imageVector = Icons.Default.Share,
                                 contentDescription = "Share",
-                                tint = Color.White,
+                                tint = WhiteSmoke,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -200,7 +199,7 @@ fun ArtistScreen(
                                 modifier = Modifier
                                     .size(126.dp)
                                     .clip(CircleShape)
-                                    .border(3.dp, Color.White.copy(alpha = 0.6f), CircleShape)
+                                    .border(3.dp, WhiteSmoke.copy(alpha = 0.6f), CircleShape)
                                     .liquidGlassEffect(shape = CircleShape, elevation = 8.dp)
                             ) {
                                 AsyncImage(
@@ -283,7 +282,7 @@ fun ArtistScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Button(
-                            onClick = { isFollowing = !isFollowing },
+                            onClick = { onToggleFollow?.invoke(displayArtist) },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isFollowing) StormBlackElevated else WhiteSmoke,
                                 contentColor = if (isFollowing) WhiteSmoke else StormBlackBg

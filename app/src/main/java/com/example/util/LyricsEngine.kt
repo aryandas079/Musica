@@ -51,6 +51,59 @@ object LyricsEngine {
         }
     }
 
+    /**
+     * Seamlessly aligns full-song synced lyrics from LRCLIB with 30-second audio previews.
+     * Prevents lines from racing by at 10x speed by centering the 30-second window around
+     * the preview's chorus hook or vocal start, keeping real singing tempo.
+     */
+    fun alignSyncedLyricsForPreview(
+        fullSyncedLines: List<SyncedLyricLine>,
+        songTitle: String,
+        targetDurationMs: Long = 30000L
+    ): List<SyncedLyricLine> {
+        if (fullSyncedLines.isEmpty()) return emptyList()
+
+        val maxTime = fullSyncedLines.maxOfOrNull { it.timeMs } ?: 0L
+        // If lines already fit cleanly in a preview window, return directly
+        if (maxTime <= 36000L) {
+            return fullSyncedLines
+        }
+
+        // iTunes and Deezer previews typically highlight the main chorus/hook (where title appears)
+        val cleanTitle = songTitle.lowercase()
+            .replace(Regex("\\(.*?\\)|\\[.*?\\]"), "")
+            .trim()
+        val titleWords = cleanTitle.split(" ").filter { it.length > 2 }
+
+        val titleMatch = fullSyncedLines.firstOrNull { line ->
+            line.timeMs in 20000L..180000L && titleWords.any { word -> line.text.contains(word, ignoreCase = true) }
+        }
+
+        val startOffsetMs = when {
+            titleMatch != null -> (titleMatch.timeMs - 4000L).coerceAtLeast(0L)
+            else -> {
+                // If vocals start after 12s, align with first vocal section
+                val firstVocals = fullSyncedLines.firstOrNull { it.text.isNotBlank() }?.timeMs ?: 0L
+                if (firstVocals in 15000L..45000L) firstVocals else 0L
+            }
+        }
+
+        val endOffsetMs = startOffsetMs + targetDurationMs
+        val sliced = fullSyncedLines.filter { it.timeMs in (startOffsetMs - 1200L)..(endOffsetMs + 1000L) }
+            .map { line ->
+                val shifted = (line.timeMs - startOffsetMs).coerceIn(0L, targetDurationMs)
+                line.copy(timeMs = shifted)
+            }
+
+        return if (sliced.size >= 4) {
+            sliced
+        } else {
+            val fallbackSlice = fullSyncedLines.take(12)
+            val step = targetDurationMs / (fallbackSlice.size + 1)
+            fallbackSlice.mapIndexed { idx, line -> line.copy(timeMs = idx * step) }
+        }
+    }
+
     fun getLanguageCode(lang: String): String {
         val clean = lang.trim().lowercase()
         if (clean == "original") return "original"
@@ -184,7 +237,7 @@ object LyricsEngine {
             lower.contains("pain") || lower.contains("hurt") -> "El dolor se desvanece hoy"
             lower.contains("fly") || lower.contains("sky") -> "Volando libres por el cielo azul"
             lower.contains("forever") -> "Juntos por toda la eternidad"
-            else -> "♪ " + original
+            else -> original
                 .replace("I ", "Yo ", ignoreCase = true)
                 .replace("you ", "tú ", ignoreCase = true)
                 .replace("my ", "mi ", ignoreCase = true)
@@ -209,7 +262,7 @@ object LyricsEngine {
             lower.contains("sky") -> "広がる青空の向こうへ"
             lower.contains("forever") -> "永遠に君と共に歩んでいく"
             lower.contains("feel") -> "この胸の高鳴りを感じて"
-            else -> "♪ " + original.take(24) + " (心に響くメロディ)"
+            else -> original.take(24) + " (心に響くメロディ)"
         }
     }
 
@@ -224,7 +277,7 @@ object LyricsEngine {
             lower.contains("stay") -> "내 곁에 영원히 머물러줘"
             lower.contains("heart") -> "심장이 터질 듯 뛰어와"
             lower.contains("forever") -> "영원토록 우리 둘이서"
-            else -> "♪ " + original.take(24) + " (감미로운 멜로디)"
+            else -> original.take(24) + " (감미로운 멜로디)"
         }
     }
 
@@ -237,7 +290,7 @@ object LyricsEngine {
             lower.contains("heart") -> "Mon cœur bat pour toi"
             lower.contains("stay") -> "Reste encore un instant avec moi"
             lower.contains("forever") -> "Ensemble pour toujours"
-            else -> "♪ " + original.replace("I ", "Je ")
+            else -> original.replace("I ", "Je ")
                 .replace("you ", "toi ")
                 .replace("my ", "mon ")
         }
@@ -251,7 +304,7 @@ object LyricsEngine {
             lower.contains("light") -> "Ein strahlendes Licht im Dunkeln"
             lower.contains("heart") -> "Mein Herz schlägt nur für dich"
             lower.contains("forever") -> "Für immer an deiner Seite"
-            else -> "♪ " + original.replace("I ", "Ich ")
+            else -> original.replace("I ", "Ich ")
                 .replace("my ", "mein ")
         }
     }
@@ -265,7 +318,7 @@ object LyricsEngine {
             lower.contains("light") || lower.contains("shine") -> "रोशनी की तरह जगमगाता हुआ"
             lower.contains("stay") -> "मेरे पास हमेशा के लिए ठहर जाओ"
             lower.contains("forever") -> "हमेशा हमेशा के लिए साथ"
-            else -> "♪ " + original.take(24) + " (दिल को छूने वाली धुन)"
+            else -> original.take(24) + " (दिल को छूने वाली धुन)"
         }
     }
 
@@ -278,7 +331,7 @@ object LyricsEngine {
             lower.contains("light") -> "照亮前行道路的光芒"
             lower.contains("stay") -> "请停留在我身边永不离开"
             lower.contains("forever") -> "生生世世与你相伴"
-            else -> "♪ " + original.take(20) + " (动人心弦的旋律)"
+            else -> original.take(20) + " (动人心弦的旋律)"
         }
     }
 
@@ -287,9 +340,9 @@ object LyricsEngine {
             lower.contains("love") -> "Ti amo con tutta l'anima"
             lower.contains("night") -> "Nel silenzio della notte"
             lower.contains("heart") -> "Il mio cuore batte solo per te"
-            lower.contains("dream") -> "Un sogno che diventa realtà"
+            lower.contains("dream") -> "Un sogno que diventa realtà"
             lower.contains("forever") -> "Insieme per sempre"
-            else -> "♪ " + original.replace("I ", "Io ").replace("my ", "il mio ")
+            else -> original.replace("I ", "Io ").replace("my ", "il mio ")
         }
     }
 
@@ -300,7 +353,7 @@ object LyricsEngine {
             lower.contains("heart") -> "Meu coração bate forte por você"
             lower.contains("dream") -> "Vivendo esse lindo sonho"
             lower.contains("forever") -> "Pra sempre ao seu lado"
-            else -> "♪ " + original.replace("I ", "Eu ").replace("my ", "meu ")
+            else -> original.replace("I ", "Eu ").replace("my ", "meu ")
         }
     }
 
@@ -355,73 +408,86 @@ object LyricsEngine {
         val a = artist.lowercase()
 
         return when {
+            // Cruel Summer - iTunes preview is at 02:04 (Chorus + Bridge transition)
             t.contains("cruel summer") || (a.contains("taylor swift") && t.contains("cruel")) -> """
-                [00:00.00]I'm drunk in the back of the car
-                [00:02.80]And I cried like a baby coming home from the bar
-                [00:05.80]Said, "I'm fine, " but it wasn't true
-                [00:08.50]I don't wanna keep secrets just to keep you
-                [00:11.80]And I snuck in through the garden gate
-                [00:14.50]Every night that summer just to seal my fate
-                [00:17.80]And I screamed for whatever it's worth
-                [00:20.50]"I love you, " ain't that the worst thing you ever heard?
-                [00:24.00]He looks up grinning like a devil
-                [00:27.50]It's a cruel summer with you
+                [00:00.17]It's new, the shape of your body
+                [00:02.72]It's blue, the feeling I've got
+                [00:05.62]And it's ooh, whoa-oh
+                [00:08.57]It's a cruel summer
+                [00:11.16]"It's cool," that's what I tell 'em
+                [00:14.14]No rules in breakable heaven
+                [00:17.06]But ooh, whoa-oh
+                [00:19.61]It's a cruel summer with you
+                [00:23.06]I'm drunk in the back of the car
+                [00:25.49]And I cried like a baby coming home from the bar (oh)
+                [00:28.66]Said, "I'm fine," but it wasn't true
             """.trimIndent()
 
+            // Shape of You - iTunes preview is at 00:47 (First Chorus)
             t.contains("shape of you") || (a.contains("ed sheeran") && t.contains("shape")) -> """
-                [00:00.00]I'm in love with the shape of you
-                [00:03.20]We push and pull like a magnet do
-                [00:06.50]Although my heart is falling too
-                [00:09.80]I'm in love with your body
-                [00:13.20]And last night you were in my room
-                [00:16.50]And now my bedsheets smell like you
-                [00:19.80]Every day discovering something brand new
-                [00:23.20]I'm in love with your body
-                [00:26.50]Oh—I—oh—I—oh—I—oh—I
-                [00:28.50]I'm in love with your body
+                [00:00.28]Come, come on now, follow my lead
+                [00:03.75]I'm in love with the shape of you
+                [00:06.14]We push and pull like a magnet do
+                [00:08.69]Although my heart is falling too
+                [00:11.14]I'm in love with your body
+                [00:13.61]Last night you were in my room
+                [00:16.19]And now my bed sheets smell like you
+                [00:18.35]Every day discovering something brand new
+                [00:21.02]Oh, I'm in love with your body
+                [00:23.02]Oh I, oh I, oh I, oh I
+                [00:26.14]Oh, I'm in love with your body
+                [00:27.89]Oh I, oh I, oh I, oh I
             """.trimIndent()
 
+            // Blinding Lights - iTunes preview is at 02:23 (Climax Chorus)
             t.contains("blinding lights") || (a.contains("the weeknd") && t.contains("blinding")) -> """
-                [00:00.00]I look around and Sin City's cold and empty
-                [00:04.50]No one's around to judge me
-                [00:07.50]I can't see clearly when you're gone
-                [00:11.50]I said, ooh, I'm blinded by the lights
-                [00:17.20]No, I can't sleep until I feel your touch
-                [00:22.50]I said, ooh, I'm drowning in the night
-                [00:27.00]Oh, when I'm like this, you're the one I trust
+                [00:00.00]I could never say it on the phone (say it on the phone)
+                [00:02.37]Will never let you go this time (ooh)
+                [00:07.27]I said, "Ooh, I'm blinded by the lights
+                [00:13.33]No, I can't sleep until I feel your touch"
+                [00:17.50](Hey, hey, hey)
+                [00:22.00]I said, "Ooh, I'm drowning in the night
+                [00:26.50]Oh, when I'm like this, you're the one I trust"
             """.trimIndent()
 
+            // Birds of a Feather - iTunes preview is at 00:06 (Intro/Verse 1)
             t.contains("birds of a feather") || (a.contains("billie eilish") && t.contains("birds")) -> """
-                [00:00.00]Birds of a feather, we should stick together, I know
-                [00:06.50]I said I'd never think I wasn't better alone
-                [00:13.00]Can't change the weather, might not be forever
-                [00:19.50]But if it's forever, it's even better
-                [00:24.00]And I don't know what I'm cryin' for
-                [00:27.50]I don't think I could love you more
+                [00:00.00]Birds of a feather, we should stick together
+                [00:02.22]'Til I'm in the grave
+                [00:06.96]'Til I rot away, dead and buried
+                [00:11.30]'Til I'm in the casket you carry
+                [00:15.59]If you go, I'm going too, uh
+                [00:20.45]'Cause it was always you, alright
+                [00:25.08]And if I'm turnin' blue, please don't save me
+                [00:29.00]Nothing left to lose without my baby
             """.trimIndent()
 
+            // Espresso - iTunes preview is at 01:07 (Chorus Hook)
             t.contains("espresso") || (a.contains("sabrina carpenter") && t.contains("espresso")) -> """
-                [00:00.00]Now he's thinkin' 'bout me every night, oh
-                [00:03.50]Is it that sweet? I guess so
-                [00:07.00]Say you can't sleep, baby, I know
-                [00:10.50]That's that me, espresso
-                [00:14.00]Move it up, down, left, right, oh
-                [00:17.50]Switch it up like Nintendo
-                [00:21.00]Say you can't sleep, baby, I know
-                [00:24.50]That's that me, espresso
-                [00:27.50]I can't relate to desperation
+                [00:00.70]Is it that sweet? I guess so
+                [00:02.96]Say you can't sleep, baby, I know
+                [00:05.37]That's that me espresso
+                [00:07.51]Move it up, down, left, right, oh
+                [00:09.88]Switch it up like Nintendo
+                [00:12.05]Say you can't sleep, baby, I know
+                [00:14.51]That's that me espresso
+                [00:17.13]Holy shit
+                [00:19.21]Is it that sweet? I guess so
+                [00:21.87]I'm working late, 'cause I'm a singer
+                [00:26.39]Oh, he looks so cute wrapped 'round my finger
             """.trimIndent()
 
+            // Die With A Smile - iTunes preview is at 01:59 (Chorus Climax)
             t.contains("die with a smile") || ((a.contains("gaga") || a.contains("bruno")) && t.contains("smile")) -> """
-                [00:00.00]Wherever you go, that's where I'll follow
-                [00:05.50]Nobody's promised tomorrow
-                [00:10.00]So I'ma love you every night like it's the last night
-                [00:15.50]Like it's the last night
-                [00:19.50]If the world was ending, I'd wanna be next to you
-                [00:24.50]If the party was over and our time on Earth was through
-                [00:28.00]I'd wanna hold you just for a while and die with a smile
+                [00:01.00]Like it's the last night
+                [00:03.33]If the world was ending, I'd wanna be next to you
+                [00:12.34]If the party was over and our time on Earth was through
+                [00:21.25]I'd wanna hold you just for a while
+                [00:26.15]And die with a smile
+                [00:28.50]If the world was ending, I'd wanna be next to you
             """.trimIndent()
 
+            // MONACO - iTunes preview is at 01:45
             t.contains("monaco") || (a.contains("bad bunny") && t.contains("monaco")) -> """
                 [00:00.00]Dime si te gusta cómo se siente
                 [00:03.50]Bebiendo champaña en Mónaco de repente
@@ -434,83 +500,103 @@ object LyricsEngine {
                 [00:27.50]Mónaco de noche, la vida es un derroche
             """.trimIndent()
 
+            // たぶん (Tabun) - iTunes preview is at 00:55
             t.contains("tabun") || t.contains("たぶん") || (a.contains("yoasobi") && (t.contains("tabun") || t.contains("たぶん"))) -> """
                 [00:00.00]涙流すことすら無いまま
-                [00:05.50]過ごした日々の痕一つも残さずに
-                [00:10.50]さよならだ
-                [00:13.50]一人で迎えた朝に
-                [00:17.50]鳴り響く誰かの足音
-                [00:21.50]二人で過ごした部屋で
-                [00:25.00]悪いのは誰だ 分かんないよ
-                [00:28.00]誰のせいでもない たぶん
+                [00:04.50]過ごした日々の痕一つも残さずに
+                [00:09.50]さよならだ
+                [00:12.50]一人で迎えた朝に
+                [00:16.50]鳴り響く誰かの足音
+                [00:20.50]二人で過ごした部屋で
+                [00:24.00]悪いのは誰だ 分かんないよ
+                [00:27.50]誰のせいでもない たぶん
             """.trimIndent()
 
+            // As It Was - iTunes preview is at 00:37 (Chorus)
             t.contains("as it was") || (a.contains("harry styles") && t.contains("as it was")) -> """
                 [00:00.00]In this world, it's just us
-                [00:04.50]You know it's not the same as it was
-                [00:09.50]In this world, it's just us
-                [00:14.00]You know it's not the same as it was
-                [00:19.00]As it was, as it was
-                [00:23.50]You know it's not the same
-                [00:27.00]Answer the phone, Harry, you're no good alone
+                [00:06.50]You know it's not the same as it was
+                [00:11.20]In this world, it's just us
+                [00:17.80]You know it's not the same as it was
+                [00:22.50]As it was, as it was
+                [00:27.00]You know it's not the same
             """.trimIndent()
 
+            // Starboy - iTunes preview is at 00:54 (Chorus)
             t.contains("starboy") || (a.contains("the weeknd") && t.contains("starboy")) -> """
-                [00:00.00]Switch up my style, I take any lane
-                [00:03.80]I switch up my cup, I kill any pain
-                [00:07.50]Look what you've done
-                [00:10.50]I'm a motherfuckin' starboy
-                [00:14.50]Look what you've done
-                [00:17.50]I'm a motherfuckin' starboy
-                [00:21.50]Everyday a nigga try to test me, ah
-                [00:25.00]Everyday a nigga try to end me, ah
-                [00:28.50]Pull up in that 'Rari, Starboy
+                [00:00.00]I'm tryna put you in the worst mood, ah
+                [00:03.50]P1 cleaner than your church shoes, ah
+                [00:07.00]Milli' point two just to hurt you, ah
+                [00:10.50]All red Lamb' just to tease you, ah
+                [00:14.00]Look what you've done
+                [00:16.50]I'm a motherfuckin' starboy
+                [00:20.50]Look what you've done
+                [00:23.50]I'm a motherfuckin' starboy
+                [00:27.50]Everyday a nigga try to test me, ah
             """.trimIndent()
 
+            // Anti-Hero - iTunes preview is at 00:44 (Chorus)
             t.contains("anti-hero") || t.contains("anti hero") || (a.contains("taylor swift") && t.contains("anti")) -> """
-                [00:00.00]Tale as old as time
-                [00:03.50]I wake up screaming from dreaming
-                [00:07.00]One day I'll watch as you're leaving
-                [00:10.50]And life will lose all its meaning
-                [00:14.00]It's me, hi, I'm the problem, it's me
-                [00:18.50]At tea time, everybody agrees
-                [00:22.50]I'll stare directly at the sun, but never in the mirror
-                [00:27.00]It must be exhausting always rooting for the anti-hero
+                [00:00.00]It's me, hi, I'm the problem, it's me
+                [00:04.50]At tea time, everybody agrees
+                [00:08.50]I'll stare directly at the sun, but never in the mirror
+                [00:13.00]It must be exhausting always rooting for the anti-hero
+                [00:18.50]Sometimes I feel like everybody is a sexy baby
+                [00:23.00]And I'm a monster on the hill
+                [00:27.00]Too big to hang out, slowly lurching toward your favorite city
             """.trimIndent()
 
+            // One Dance - iTunes preview is at 00:05
             t.contains("one dance") || (a.contains("drake") && t.contains("one dance")) -> """
-                [00:00.00]Baby, I like your style
-                [00:03.50]Grips on your waist, front way, back way
-                [00:07.00]You know that I don't play
-                [00:10.00]Streets not safe, but I never run away
-                [00:13.50]That's why I need a one dance
-                [00:17.00]Got a Hennessy in my hand
-                [00:20.50]One more time 'fore I go
-                [00:24.00]Higher powers taking a hold on me
-                [00:27.50]Yeah, I need a one dance
+                [00:01.00]Baby, I like your style
+                [00:04.50]Grips on your waist, front way, back way
+                [00:08.50]You know that I don't play
+                [00:10.91]Streets not safe but I never run away
+                [00:13.64]Even when I'm away
+                [00:15.68]Oti, oti, there's never much love
+                [00:19.68]I pray to make it back in one piece
+                [00:24.05]That's why I need a one dance
+                [00:26.54]Got a Hennessy in my hand
+                [00:28.79]One more time 'fore I go
             """.trimIndent()
 
+            // God's Plan - iTunes preview is at 01:26
             t.contains("god's plan") || (a.contains("drake") && t.contains("plan")) -> """
-                [00:00.00]I been movin' calm, don't start no trouble with me
-                [00:03.50]Tryna keep it peaceful is a struggle for me
-                [00:07.00]Don't pull up at 6 AM to cuddle with me
-                [00:10.50]You know how I like it when you lovin' on me
-                [00:14.00]God's plan, God's plan
-                [00:17.50]I hold back, sometimes I won't, yeah
-                [00:21.00]I feel good, sometimes I don't, ayy
-                [00:24.50]I finessed down Weston Road, ayy
-                [00:27.50]Might go down a G.O.A.T., yeah
+                [00:01.85]She say, "Do you love me?" I tell her, "Only partly
+                [00:04.89]I only love my bed and my momma, I'm sorry"
+                [00:08.12]Fifty Dub, I even got it tatted on me
+                [00:11.23]81, they'll bring the crashers to the party
+                [00:14.74]And you know me
+                [00:16.66]Turn a O2 into the O3, dog
+                [00:19.78]Without 40, Oli', there'd be no me
+                [00:22.87]'Magine if I never met the broskis
+                [00:26.07]God's plan, God's plan
+                [00:29.50]I can't do this on my own, ayy, no, ayy
             """.trimIndent()
 
+            // Hotline Bling - iTunes preview is at 00:49
             t.contains("hotline bling") || (a.contains("drake") && t.contains("hotline")) -> """
-                [00:00.00]You used to call me on my cell phone
-                [00:04.50]Late night when you need my love
-                [00:08.50]Call me on my cell phone
-                [00:12.50]Late night when you need my love
-                [00:16.50]And I know when that hotline bling
-                [00:20.50]That can only mean one thing
-                [00:24.50]Ever since I left the city, you
-                [00:28.00]Started wearing less and goin' out more
+                [00:00.00]Everybody knows and I feel left out
+                [00:02.39]Girl you got me down, you got me stressed out
+                [00:05.85]'Cause ever since I left the city, you
+                [00:09.44]Started wearing less and goin' out more
+                [00:12.94]Glasses of champagne out on the dance floor
+                [00:16.44]Hangin' with some girls I've never seen before
+                [00:20.34]You used to call me on my cell phone
+                [00:24.38]Late night when you need my love
+                [00:28.04]Call me on my cell phone
+            """.trimIndent()
+
+            // Passionfruit - iTunes preview is at 01:05
+            t.contains("passionfruit") || (a.contains("drake") && t.contains("passionfruit")) -> """
+                [00:00.00]Listen
+                [00:03.50]Seein' you got ritualistic
+                [00:07.00]Cleansin' my soul of addiction for now
+                [00:11.00]'Cause I'm fallin' apart
+                [00:15.00]Yeah, tension
+                [00:18.50]Between us is not happenin'
+                [00:22.00]Hard to find your way back when you go out of town
+                [00:26.50]Passin' me by
             """.trimIndent()
 
             t.contains("flowers") || (a.contains("miley cyrus") && t.contains("flowers")) -> """

@@ -27,14 +27,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,22 +60,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.model.Artist
+import com.example.model.DiscoveryRecommendation
 import com.example.model.HistoryItem
 import com.example.model.Song
+import com.example.model.SyncStatus
+import com.example.model.UserSession
+import com.example.ui.components.GeminiDiscoverySection
+import com.example.ui.components.HomeAuthHeader
 import com.example.ui.theme.GenreHipHopBg
-import com.example.ui.theme.GenreJPopBg
-import com.example.ui.theme.GenreKPopBg
-import com.example.ui.theme.GenreLatinBg
-import com.example.ui.theme.GenrePopBg
-import com.example.ui.theme.GenreRnBBg
-import com.example.ui.theme.GenreRockBg
-import com.example.ui.theme.SpotifyGreen
-import com.example.ui.theme.StormBlackBg
-import com.example.ui.theme.StormBlackCard
-import com.example.ui.theme.StormSlateBorder
-import com.example.ui.theme.WhiteSmoke
-import com.example.ui.theme.WhiteSmokeMuted
-import com.example.ui.theme.liquidGlassEffect
+import com.example.ui.theme.*
 
 data class GenreItem(
     val name: String,
@@ -95,10 +93,24 @@ fun HomeScreen(
     onToggleFavorite: (Song) -> Unit,
     onArtistClick: (String) -> Unit,
     onNavigateToSearch: () -> Unit,
-    onOpenCustomization: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenGenre: (String) -> Unit = {},
     historyItems: List<HistoryItem> = emptyList(),
-    currentPlayingId: Long? = null
+    currentPlayingId: Long? = null,
+    discoveryRecommendations: List<DiscoveryRecommendation> = emptyList(),
+    isDiscoveryLoading: Boolean = false,
+    onRefreshDiscovery: () -> Unit = {},
+    onOpenLyrics: ((Song) -> Unit)? = null,
+    themeMode: com.example.model.AppThemeMode = com.example.model.AppThemeMode.DARK,
+    onToggleTheme: (() -> Unit)? = null,
+    userSession: UserSession? = null,
+    syncStatus: SyncStatus = SyncStatus.IDLE,
+    onOpenAuth: () -> Unit = {},
+    deviceSongs: List<Song> = emptyList(),
+    isOfflineMode: Boolean = false,
+    isScanningDeviceFiles: Boolean = false,
+    onSyncDeviceFiles: () -> Unit = {},
+    onToggleOfflineMode: () -> Unit = {}
 ) {
     val colorScheme = MaterialTheme.colorScheme
 
@@ -146,77 +158,296 @@ fun HomeScreen(
                 .statusBarsPadding(),
             contentPadding = PaddingValues(bottom = 120.dp)
         ) {
-            // Top Bar: "Musica" + Search, History/Customization, Profile/Account
+            // Top Bar with Authentication & Dynamic Greeting
             item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "Musica",
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colorScheme.onBackground,
-                            letterSpacing = (-0.5).sp
-                        )
-                        Text(
-                            text = if (hasHistory) "Welcome back • Synced Lyrics" else "Stream • Synced Lyrics • Glass UI",
-                            fontSize = 11.sp,
-                            color = colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
+                HomeAuthHeader(
+                    userSession = userSession,
+                    syncStatus = syncStatus,
+                    onOpenAuth = onOpenAuth,
+                    onNavigateToSearch = onNavigateToSearch,
+                    isOfflineMode = isOfflineMode,
+                    onToggleOfflineMode = onToggleOfflineMode
+                )
+            }
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            // Device Local Storage Offline Sync Banner Card
+            if (isOfflineMode) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 6.dp)
+                            .liquidGlassEffect(shape = RoundedCornerShape(20.dp), elevation = 4.dp)
+                            .border(
+                                width = 1.dp,
+                                color = if (isOfflineMode) SpotifyGreen.copy(alpha = 0.5f) else colorScheme.outline.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(20.dp)
+                            )
+                            .padding(14.dp)
                     ) {
-                        IconButton(
-                            onClick = onNavigateToSearch,
-                            modifier = Modifier
-                                .size(40.dp)
-                                .liquidGlassEffect(shape = CircleShape, elevation = 2.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = "Search",
-                                tint = colorScheme.onSurface,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isOfflineMode) SpotifyGreen.copy(alpha = 0.2f) else colorScheme.surfaceVariant),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isOfflineMode) Icons.Default.CloudOff else Icons.Default.PhoneAndroid,
+                                            contentDescription = "Device Storage",
+                                            tint = if (isOfflineMode) SpotifyGreen else colorScheme.onSurface
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = if (isOfflineMode) "Offline Device Mode" else "Sync Device Music",
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = colorScheme.onSurface
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(if (isOfflineMode) SpotifyGreen else colorScheme.secondaryContainer)
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (isOfflineMode) "OFFLINE ACTIVE" else "LOCAL SD",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = if (isOfflineMode) StormBlackBg else colorScheme.onSecondaryContainer
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            text = "${deviceSongs.size} tracks scanned from device storage",
+                                            fontSize = 11.sp,
+                                            color = colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
 
-                        IconButton(
-                            onClick = onOpenCustomization,
-                            modifier = Modifier
-                                .size(40.dp)
-                                .liquidGlassEffect(shape = CircleShape, elevation = 2.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = "Customize & History",
-                                tint = colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                                // Sync / Scan button
+                                IconButton(
+                                    onClick = onSyncDeviceFiles,
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(colorScheme.surfaceVariant)
+                                ) {
+                                    if (isScanningDeviceFiles) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            color = SpotifyGreen,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Sync,
+                                            contentDescription = "Sync Local Files",
+                                            tint = colorScheme.onSurface,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
 
-                        IconButton(
-                            onClick = onOpenCustomization,
-                            modifier = Modifier
-                                .size(40.dp)
-                                .liquidGlassEffect(shape = CircleShape, elevation = 2.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = "Account & Settings",
-                                tint = colorScheme.onSurface,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            // Play Offline Songs Row if offline mode or synced
+                            if (deviceSongs.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(36.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(SpotifyGreen)
+                                            .clickable {
+                                                deviceSongs.firstOrNull()?.let { onPlaySong(it, deviceSongs) }
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.PlayArrow,
+                                                contentDescription = "Play Offline",
+                                                tint = StormBlackBg,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Play All Offline Tracks",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = StormBlackBg
+                                            )
+                                        }
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .height(36.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(
+                                                if (isOfflineMode) SpotifyGreen.copy(alpha = 0.25f)
+                                                else colorScheme.surfaceVariant
+                                            )
+                                            .clickable { onToggleOfflineMode() }
+                                            .padding(horizontal = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = if (isOfflineMode) "Online Mode" else "Toggle Offline",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isOfflineMode) SpotifyGreen else colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
+                }
+            }
+
+            // Device Files Offline Audio Section
+            if (isOfflineMode && deviceSongs.isNotEmpty()) {
+                item {
+                    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.SdCard,
+                                    contentDescription = null,
+                                    tint = SpotifyGreen,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Device Offline Storage",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colorScheme.onSurface
+                                )
+                            }
+
+                            Text(
+                                text = "${deviceSongs.size} local tracks",
+                                fontSize = 11.sp,
+                                color = colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(deviceSongs) { song ->
+                                val isCurrent = song.id == currentPlayingId
+
+                                Column(
+                                    modifier = Modifier
+                                        .width(135.dp)
+                                        .liquidGlassEffect(shape = RoundedCornerShape(16.dp), elevation = 3.dp)
+                                        .clickable {
+                                            onPlaySong(song, deviceSongs)
+                                            onOpenSongDetails(song)
+                                        }
+                                        .padding(10.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(115.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                    ) {
+                                        AsyncImage(
+                                            model = song.artworkUrl,
+                                            contentDescription = song.title,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(6.dp)
+                                                .align(Alignment.TopStart)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(StormBlackBg.copy(alpha = 0.85f))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "OFFLINE",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = SpotifyGreen
+                                            )
+                                        }
+
+                                        if (isCurrent && isPlaying) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(Color.Black.copy(alpha = 0.4f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.GraphicEq,
+                                                    contentDescription = "Playing",
+                                                    tint = SpotifyGreen,
+                                                    modifier = Modifier.size(28.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Text(
+                                        text = song.title,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isCurrent) SpotifyGreen else colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+
+                                    Spacer(modifier = Modifier.height(2.dp))
+
+                                    Text(
+                                        text = song.artist,
+                                        fontSize = 11.sp,
+                                        color = colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
                 }
             }
 
@@ -331,7 +562,7 @@ fun HomeScreen(
                                                     Icon(
                                                         imageVector = Icons.Default.GraphicEq,
                                                         contentDescription = "Playing",
-                                                        tint = Color.Black,
+                                                        tint = StormBlackBg,
                                                         modifier = Modifier.size(14.dp)
                                                     )
                                                 }
@@ -350,16 +581,52 @@ fun HomeScreen(
                 }
             }
 
-            // Section 2: "Genres" with Geometric Vector Art
+            // Section: Gemini AI Song Discovery
+            item {
+                GeminiDiscoverySection(
+                    recommendations = discoveryRecommendations,
+                    isLoading = isDiscoveryLoading,
+                    onPlaySong = { song ->
+                        val playlist = discoveryRecommendations.map { it.song }
+                        onPlaySong(song, playlist)
+                        onOpenSongDetails(song)
+                    },
+                    onRefreshDiscovery = onRefreshDiscovery,
+                    onOpenLyrics = { song ->
+                        onOpenLyrics?.invoke(song)
+                    },
+                    onToggleFavorite = onToggleFavorite,
+                    favoriteSongIds = favoriteSongs.map { it.id }.toSet(),
+                    currentPlayingId = currentPlayingId,
+                    modifier = Modifier.padding(vertical = 6.dp)
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            // Section 2: "Genres" with Geometric Vector Art & Live Billboard Top Charts
             item {
                 Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                    Text(
-                        text = "Genres",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 20.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Genres & Top Charts",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Tap any genre for real-time Billboard & World Top 50",
+                                fontSize = 11.sp,
+                                color = colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(12.dp))
 
                     LazyRow(
@@ -370,7 +637,10 @@ fun HomeScreen(
                             GenreVectorCard(
                                 genre = genre,
                                 isSelected = selectedCategory.equals(genre.name, ignoreCase = true),
-                                onClick = { onSelectCategory(genre.name) }
+                                onClick = {
+                                    onSelectCategory(genre.name)
+                                    onOpenGenre(genre.name)
+                                }
                             )
                         }
                     }
@@ -378,16 +648,30 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(14.dp))
             }
 
-            // Section 3: "Artists" Circular Avatars
+            // Section 3: "Artists" Circular Avatars (Dynamic Based on History & Taste)
             item {
                 Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                    Text(
-                        text = "Artists",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 20.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Artists For You",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (hasHistory) "Recommended from your listening history" else "Trending Billboard chart artists",
+                                fontSize = 11.sp,
+                                color = colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(14.dp))
 
                     LazyRow(
@@ -406,7 +690,7 @@ fun HomeScreen(
                                         modifier = Modifier
                                             .size(76.dp)
                                             .clip(CircleShape)
-                                            .border(2.dp, Color.White.copy(alpha = 0.4f), CircleShape)
+                                            .border(2.dp, WhiteSmoke.copy(alpha = 0.4f), CircleShape)
                                             .liquidGlassEffect(shape = CircleShape, elevation = 4.dp)
                                     ) {
                                         AsyncImage(
@@ -472,18 +756,6 @@ fun HomeScreen(
                                 color = colorScheme.onSurfaceVariant
                             )
                         }
-
-                        IconButton(
-                            onClick = onOpenCustomization,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.History,
-                                contentDescription = "History",
-                                tint = colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
                     }
                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -529,14 +801,14 @@ fun HomeScreen(
                                                 .align(Alignment.BottomStart)
                                                 .padding(8.dp)
                                                 .clip(RoundedCornerShape(8.dp))
-                                                .background(Color.Black.copy(alpha = 0.65f))
+                                                .background(StormBlackBg.copy(alpha = 0.65f))
                                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                                         ) {
                                             Text(
                                                 text = "30s preview",
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                color = Color.White
+                                                color = WhiteSmoke
                                             )
                                         }
 
@@ -549,12 +821,12 @@ fun HomeScreen(
                                                 .padding(6.dp)
                                                 .size(32.dp)
                                                 .clip(CircleShape)
-                                                .background(Color.Black.copy(alpha = 0.4f))
+                                                .background(StormBlackBg.copy(alpha = 0.4f))
                                         ) {
                                             Icon(
                                                 imageVector = if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                                 contentDescription = "Favorite",
-                                                tint = if (isFav) WhiteSmoke else Color.White,
+                                                tint = if (isFav) WhiteSmoke else WhiteSmokeDim,
                                                 modifier = Modifier.size(18.dp)
                                             )
                                         }
@@ -597,15 +869,21 @@ fun GenreVectorCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+    val bgCol = if (isSelected) colorScheme.primary else colorScheme.surfaceVariant
+    val borderCol = if (isSelected) colorScheme.primary else colorScheme.outline
+    val textColor = if (isSelected) colorScheme.onPrimary else colorScheme.onSurface
+    val subTextColor = if (isSelected) colorScheme.onPrimary.copy(alpha = 0.8f) else colorScheme.onSurfaceVariant
+
     Box(
         modifier = modifier
             .width(140.dp)
             .height(84.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(if (isSelected) WhiteSmoke else StormBlackCard)
+            .background(bgCol)
             .border(
                 width = 1.dp,
-                color = if (isSelected) WhiteSmoke else StormSlateBorder,
+                color = borderCol,
                 shape = RoundedCornerShape(16.dp)
             )
             .clickable(onClick = onClick)
@@ -620,28 +898,28 @@ fun GenreVectorCard(
                 text = genre.name,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (isSelected) StormBlackBg else WhiteSmoke
+                color = textColor
             )
 
             if (isSelected) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(StormBlackBg)
+                        .background(colorScheme.onPrimary.copy(alpha = 0.2f))
                         .padding(horizontal = 7.dp, vertical = 2.dp)
                 ) {
                     Text(
                         text = "Selected",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = WhiteSmoke
+                        color = colorScheme.onPrimary
                     )
                 }
             } else {
                 Text(
                     text = "Explore",
                     fontSize = 11.sp,
-                    color = WhiteSmokeMuted
+                    color = subTextColor
                 )
             }
         }

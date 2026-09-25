@@ -59,10 +59,7 @@ import coil.compose.AsyncImage
 import com.example.model.LyricsData
 import com.example.model.Song
 import com.example.model.SyncedLyricLine
-import com.example.ui.theme.SpotifyGreen
-import com.example.ui.theme.WhiteSmokeLight
-import com.example.ui.theme.WhiteSmokeSoft
-import com.example.ui.theme.liquidGlassEffect
+import com.example.ui.theme.*
 import com.example.util.LyricsEngine
 
 @Composable
@@ -85,7 +82,6 @@ fun LyricsScreen(
     val colorScheme = MaterialTheme.colorScheme
     val languages = listOf("Original", "English", "Spanish", "Japanese", "Korean", "French", "German", "Hindi", "Chinese", "Italian")
     var isDropdownExpanded by remember { mutableStateOf(false) }
-    var isFullSongMode by remember { mutableStateOf(false) }
 
     // Resolve preview-synced lyrics with 100% precision
     val syncedLines: List<SyncedLyricLine> = remember(lyricsData, song, selectedLanguage) {
@@ -98,14 +94,7 @@ fun LyricsScreen(
                     it.text.contains("Elizabeth Taylor", ignoreCase = true) ||
                     it.text.contains("driving through the neon lights", ignoreCase = true)
                 }
-                // If timestamps are beyond the 30s preview window, fit smoothly into 30s
-                val maxTime = filtered.maxOfOrNull { it.timeMs } ?: 0L
-                if (maxTime > 40000L) {
-                    val step = 30000L / (filtered.size + 1)
-                    filtered.mapIndexed { i, line -> line.copy(timeMs = i * step) }
-                } else {
-                    filtered
-                }
+                LyricsEngine.alignSyncedLyricsForPreview(filtered, song.title, 30000L)
             } else if (lyricsData != null && lyricsData.plainLyrics.isNotBlank()) {
                 LyricsEngine.plainToEstimatedSynced(lyricsData.plainLyrics, 30000L)
             } else {
@@ -140,7 +129,7 @@ fun LyricsScreen(
 
     // Active line detection based on exact playback position
     val activeIndex = remember(currentPositionMs, syncedLines) {
-        if (syncedLines.isEmpty()) 0
+        if (syncedLines.isEmpty()) -1
         else {
             val idx = syncedLines.indexOfLast { currentPositionMs >= it.timeMs }
             if (idx == -1) 0 else idx
@@ -148,11 +137,25 @@ fun LyricsScreen(
     }
 
     val listState = rememberLazyListState()
+    var isUserInteracting by remember { mutableStateOf(false) }
+    var autoScrollEnabled by remember { mutableStateOf(true) }
 
-    LaunchedEffect(activeIndex) {
-        if (!isFullSongMode && activeIndex in syncedLines.indices) {
-            val target = (activeIndex - 2).coerceAtLeast(0)
-            listState.animateScrollToItem(target)
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            isUserInteracting = true
+        } else {
+            kotlinx.coroutines.delay(2500L)
+            isUserInteracting = false
+        }
+    }
+
+    LaunchedEffect(activeIndex, autoScrollEnabled, isUserInteracting) {
+        if (autoScrollEnabled && !isUserInteracting && activeIndex in syncedLines.indices) {
+            val target = (activeIndex - 1).coerceAtLeast(0)
+            listState.animateScrollToItem(
+                index = target,
+                scrollOffset = -120
+            )
         }
     }
 
@@ -225,52 +228,7 @@ fun LyricsScreen(
                 }
             }
 
-            // Mode Selector: Preview Sync vs Full Song
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Row(
-                    modifier = Modifier
-                        .liquidGlassEffect(shape = RoundedCornerShape(12.dp), elevation = 2.dp)
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (!isFullSongMode) colorScheme.primary else Color.Transparent)
-                            .clickable { isFullSongMode = false }
-                            .padding(horizontal = 14.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "Preview Sync (30s)",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (!isFullSongMode) colorScheme.onPrimary else colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (isFullSongMode) colorScheme.primary else Color.Transparent)
-                            .clickable { isFullSongMode = true }
-                            .padding(horizontal = 14.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "Full Song Lyrics",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isFullSongMode) colorScheme.onPrimary else colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // Dropdown Selector: "Translation Language" with Liquid Glass
             Box(
@@ -345,42 +303,13 @@ fun LyricsScreen(
                     ) {
                         CircularProgressIndicator(color = colorScheme.primary)
                     }
-                } else if (isFullSongMode) {
-                    // Full Song Reading View
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(vertical = 20.dp, horizontal = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        val stanzas = fullLyricsText.split(Regex("\n{2,}"))
-                        items(stanzas.size) { sIdx ->
-                            val stanza = stanzas[sIdx].trim()
-                            if (stanza.isNotBlank()) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .liquidGlassEffect(shape = RoundedCornerShape(14.dp), elevation = 2.dp)
-                                        .padding(16.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Text(
-                                        text = stanza,
-                                        fontSize = 16.sp,
-                                        color = colorScheme.onSurface,
-                                        textAlign = TextAlign.Center,
-                                        lineHeight = 26.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
                 } else if (syncedLines.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No synced lyrics available for this track",
+                            text = "Lyrics not available for this track",
                             fontSize = 14.sp,
                             color = colorScheme.onSurfaceVariant
                         )
@@ -519,7 +448,7 @@ fun LyricsScreen(
                                 Icon(
                                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     contentDescription = if (isPlaying) "Pause" else "Play",
-                                    tint = Color.Black,
+                                    tint = StormBlackBg,
                                     modifier = Modifier.size(28.dp)
                                 )
                             }

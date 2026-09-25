@@ -6,14 +6,22 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
@@ -31,21 +39,28 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.ui.components.CustomizationBottomSheet
+import com.example.ui.components.AuthBottomSheet
 import com.example.ui.components.MiniPlayer
+import com.example.ui.components.PlayerTab
+import com.example.ui.components.QueueDrawer
 import com.example.ui.components.SpotifyEmbedDialog
 import com.example.ui.screens.ArtistScreen
 import com.example.ui.screens.FavoritesScreen
+import com.example.ui.screens.GenreDetailScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LyricsScreen
 import com.example.ui.screens.NowPlayingScreen
@@ -65,7 +80,8 @@ fun MusicaApp(
     var showSplash by remember { mutableStateOf(true) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var viewingArtistName by remember { mutableStateOf<String?>(null) }
-    var isLyricsScreenOpen by remember { mutableStateOf(false) }
+    var viewingGenre by remember { mutableStateOf<String?>(null) }
+    var playerTab by remember { mutableStateOf(PlayerTab.NOW_PLAYING) }
 
     val colorScheme = MaterialTheme.colorScheme
 
@@ -76,6 +92,10 @@ fun MusicaApp(
     val durationMs by viewModel.durationMs.collectAsStateWithLifecycle()
     val isShuffle by viewModel.isShuffle.collectAsStateWithLifecycle()
     val isLooping by viewModel.isLooping.collectAsStateWithLifecycle()
+    val currentQueue by viewModel.currentQueue.collectAsStateWithLifecycle()
+    val queueCurrentIndex by viewModel.queueCurrentIndex.collectAsStateWithLifecycle()
+    val isQueueDrawerOpen by viewModel.isQueueDrawerOpen.collectAsStateWithLifecycle()
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle()
 
     val featuredSong by viewModel.featuredSong.collectAsStateWithLifecycle()
     val trendingSongs by viewModel.trendingSongs.collectAsStateWithLifecycle()
@@ -85,21 +105,33 @@ fun MusicaApp(
     val topArtists by viewModel.topArtists.collectAsStateWithLifecycle()
     val isHomescreenLoading by viewModel.isHomescreenLoading.collectAsStateWithLifecycle()
 
+    val genreChartData by viewModel.genreChartData.collectAsStateWithLifecycle()
+    val isGenreChartLoading by viewModel.isGenreChartLoading.collectAsStateWithLifecycle()
+
     val artistSongs by viewModel.artistSongs.collectAsStateWithLifecycle()
     val isArtistLoading by viewModel.isArtistLoading.collectAsStateWithLifecycle()
     val currentArtist by viewModel.currentArtist.collectAsStateWithLifecycle()
 
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
+    val matchedArtist by viewModel.matchedArtist.collectAsStateWithLifecycle()
+    val matchedArtists by viewModel.matchedArtists.collectAsStateWithLifecycle()
+    val matchedAlbum by viewModel.matchedAlbum.collectAsStateWithLifecycle()
+    val matchedAlbums by viewModel.matchedAlbums.collectAsStateWithLifecycle()
     val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
 
     val favoriteSongs by viewModel.favoriteSongs.collectAsStateWithLifecycle()
+    val followedArtists by viewModel.followedArtists.collectAsStateWithLifecycle()
     val historyItems by viewModel.historyItems.collectAsStateWithLifecycle()
 
+    val deviceSongs by viewModel.deviceSongs.collectAsStateWithLifecycle()
+    val isScanningDeviceFiles by viewModel.isScanningDeviceFiles.collectAsStateWithLifecycle()
+    val isOfflineMode by viewModel.isOfflineMode.collectAsStateWithLifecycle()
+
+    val discoveryRecommendations by viewModel.discoveryRecommendations.collectAsStateWithLifecycle()
+    val isDiscoveryLoading by viewModel.isDiscoveryLoading.collectAsStateWithLifecycle()
+
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
-    val appearanceMode by viewModel.appearanceMode.collectAsStateWithLifecycle()
-    val isCustomizationVisible by viewModel.isCustomizationVisible.collectAsStateWithLifecycle()
-    val isClearHistoryDialogVisible by viewModel.isClearHistoryDialogVisible.collectAsStateWithLifecycle()
 
     val lyricsData by viewModel.lyricsData.collectAsStateWithLifecycle()
     val isLyricsLoading by viewModel.isLyricsLoading.collectAsStateWithLifecycle()
@@ -108,7 +140,39 @@ fun MusicaApp(
     val isNowPlayingExpanded by viewModel.isNowPlayingExpanded.collectAsStateWithLifecycle()
     val isSpotifyEmbedVisible by viewModel.isSpotifyEmbedVisible.collectAsStateWithLifecycle()
 
+    val userSession by viewModel.userSession.collectAsStateWithLifecycle()
+    val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
+    val lastSyncTime by viewModel.lastSyncTime.collectAsStateWithLifecycle()
+    val isAuthLoading by viewModel.isAuthLoading.collectAsStateWithLifecycle()
+    val authErrorMessage by viewModel.authErrorMessage.collectAsStateWithLifecycle()
+
+    var showAuthSheet by remember { mutableStateOf(false) }
+    val authSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val spotifySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val queueSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val upcomingCount = if (queueCurrentIndex >= 0 && queueCurrentIndex < currentQueue.size - 1) {
+        currentQueue.size - (queueCurrentIndex + 1)
+    } else 0
+
+    var showOfflineStatusBar by remember { mutableStateOf(false) }
+    var offlineStatusBarColor by remember { mutableStateOf(Color(0xFFE57373)) }
+    var offlineStatusBarText by remember { mutableStateOf("Offline Mode Active") }
+
+    LaunchedEffect(isOfflineMode) {
+        if (isOfflineMode) {
+            offlineStatusBarColor = Color(0xFFFF9800) // Amber/Orange
+            offlineStatusBarText = "Offline Mode Active • Playing Device Files"
+            showOfflineStatusBar = true
+        } else {
+            if (showOfflineStatusBar) {
+                offlineStatusBarColor = Color(0xFF1DB954) // Green
+                offlineStatusBarText = "Connected to Internet"
+                kotlinx.coroutines.delay(2500)
+                showOfflineStatusBar = false
+            }
+        }
+    }
 
     // Splash Screen matching Image 1
     if (showSplash) {
@@ -122,7 +186,7 @@ fun MusicaApp(
             bottomBar = {
                 Column(modifier = Modifier.navigationBarsPadding()) {
                     // Docked MiniPlayer with Liquid Glass styling
-                    if (!isNowPlayingExpanded && !isLyricsScreenOpen && currentSong != null) {
+                    if (!isNowPlayingExpanded && currentSong != null) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -139,7 +203,12 @@ fun MusicaApp(
                                 onNext = { viewModel.playNext() },
                                 onPrevious = { viewModel.playPrevious() },
                                 onSeek = { viewModel.seekTo(it) },
-                                onExpand = { viewModel.openNowPlaying() }
+                                onExpand = { 
+                                    playerTab = PlayerTab.NOW_PLAYING
+                                    viewModel.openNowPlaying() 
+                                },
+                                onOpenQueue = { viewModel.openQueueDrawer() },
+                                upcomingCount = upcomingCount
                             )
                         }
                     }
@@ -159,14 +228,15 @@ fun MusicaApp(
                             tonalElevation = 0.dp
                         ) {
                             NavigationBarItem(
-                                selected = selectedTab == 0 && viewingArtistName == null,
+                                selected = selectedTab == 0 && viewingArtistName == null && viewingGenre == null,
                                 onClick = {
                                     selectedTab = 0
                                     viewingArtistName = null
+                                    viewingGenre = null
                                 },
                                 icon = {
                                     Icon(
-                                        imageVector = if (selectedTab == 0) Icons.Filled.Home else Icons.Outlined.Home,
+                                        imageVector = if (selectedTab == 0 && viewingArtistName == null && viewingGenre == null) Icons.Filled.Home else Icons.Outlined.Home,
                                         contentDescription = "Discover"
                                     )
                                 },
@@ -181,14 +251,15 @@ fun MusicaApp(
                             )
 
                             NavigationBarItem(
-                                selected = selectedTab == 1 && viewingArtistName == null,
+                                selected = selectedTab == 1 && viewingArtistName == null && viewingGenre == null,
                                 onClick = {
                                     selectedTab = 1
                                     viewingArtistName = null
+                                    viewingGenre = null
                                 },
                                 icon = {
                                     Icon(
-                                        imageVector = if (selectedTab == 1) Icons.Filled.Search else Icons.Outlined.Search,
+                                        imageVector = if (selectedTab == 1 && viewingArtistName == null && viewingGenre == null) Icons.Filled.Search else Icons.Outlined.Search,
                                         contentDescription = "Search"
                                     )
                                 },
@@ -203,18 +274,19 @@ fun MusicaApp(
                             )
 
                             NavigationBarItem(
-                                selected = selectedTab == 2 && viewingArtistName == null,
+                                selected = selectedTab == 2 && viewingArtistName == null && viewingGenre == null,
                                 onClick = {
                                     selectedTab = 2
                                     viewingArtistName = null
+                                    viewingGenre = null
                                 },
                                 icon = {
                                     Icon(
-                                        imageVector = if (selectedTab == 2) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                                        contentDescription = "Library"
+                                        imageVector = if (selectedTab == 2 && viewingArtistName == null && viewingGenre == null) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                                        contentDescription = "Favorites"
                                     )
                                 },
-                                label = { Text("Library", fontSize = 11.sp) },
+                                label = { Text("Favorites", fontSize = 11.sp) },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = colorScheme.primary,
                                     selectedTextColor = colorScheme.primary,
@@ -233,7 +305,7 @@ fun MusicaApp(
                     .fillMaxSize()
                     .padding(bottom = paddingValues.calculateBottomPadding())
             ) {
-                // If viewing Artist page (Image 7 & 8)
+                // If viewing Artist page
                 if (viewingArtistName != null) {
                     ArtistScreen(
                         artistName = viewingArtistName!!,
@@ -241,13 +313,40 @@ fun MusicaApp(
                         artistSongs = artistSongs,
                         isLoading = isArtistLoading,
                         favoriteSongs = favoriteSongs,
+                        followedArtists = followedArtists,
                         currentPlayingId = currentSong?.id,
                         isPlaying = isPlaying,
                         onPlaySong = { s, p -> viewModel.playSong(s, p) },
                         onOpenSongDetails = { s -> viewModel.openNowPlaying(s) },
                         onToggleFavorite = { s -> viewModel.toggleFavorite(s) },
+                        onToggleFollow = { artist -> viewModel.toggleFollowArtist(artist) },
                         onBack = { viewingArtistName = null },
                         currentArtist = currentArtist
+                    )
+                } else if (viewingGenre != null) {
+                    // If viewing Realtime Genre & Billboard Top Charts
+                    GenreDetailScreen(
+                        genreName = viewingGenre!!,
+                        chartData = genreChartData,
+                        isLoading = isGenreChartLoading,
+                        favoriteSongs = favoriteSongs,
+                        followedArtists = followedArtists,
+                        currentPlayingId = currentSong?.id,
+                        isPlaying = isPlaying,
+                        onPlaySong = { s, p -> viewModel.playSong(s, p) },
+                        onOpenSongDetails = { s -> viewModel.openNowPlaying(s) },
+                        onToggleFavorite = { s -> viewModel.toggleFavorite(s) },
+                        onToggleFollowArtist = { artist -> viewModel.toggleFollowArtist(artist) },
+                        onArtistClick = { artistName ->
+                            viewModel.loadArtistSongs(artistName)
+                            viewingArtistName = artistName
+                            viewingGenre = null
+                        },
+                        onOpenLyrics = { song ->
+                            playerTab = PlayerTab.LYRICS
+                            viewModel.openNowPlaying(song)
+                        },
+                        onBack = { viewingGenre = null }
                     )
                 } else {
                     when (selectedTab) {
@@ -270,58 +369,83 @@ fun MusicaApp(
                                 viewModel.loadArtistSongs(artistName)
                             },
                             onNavigateToSearch = { selectedTab = 1 },
-                            onOpenCustomization = { viewModel.showCustomizationDialog(true) },
+                            onOpenGenre = { genreName ->
+                                viewingGenre = genreName
+                                viewModel.loadGenreChart(genreName)
+                            },
                             historyItems = historyItems,
-                            currentPlayingId = currentSong?.id
+                            currentPlayingId = currentSong?.id,
+                            discoveryRecommendations = discoveryRecommendations,
+                            isDiscoveryLoading = isDiscoveryLoading,
+                            onRefreshDiscovery = { viewModel.refreshGeminiDiscovery() },
+                            onOpenLyrics = { song ->
+                                playerTab = PlayerTab.LYRICS
+                                viewModel.openNowPlaying(song)
+                            },
+                            themeMode = themeMode,
+                            onToggleTheme = { viewModel.toggleTheme() },
+                            userSession = userSession,
+                            syncStatus = syncStatus,
+                            onOpenAuth = { showAuthSheet = true },
+                            deviceSongs = deviceSongs,
+                            isOfflineMode = isOfflineMode,
+                            isScanningDeviceFiles = isScanningDeviceFiles,
+                            onSyncDeviceFiles = { viewModel.scanAndSyncDeviceAudio() },
+                            onToggleOfflineMode = { viewModel.toggleOfflineMode() }
                         )
 
                         1 -> SearchScreen(
                             query = searchQuery,
                             searchResults = searchResults,
+                            catalogSongs = trendingSongs + recommendedSongs,
+                            matchedArtist = matchedArtist,
+                            matchedArtists = matchedArtists,
+                            matchedAlbum = matchedAlbum,
+                            matchedAlbums = matchedAlbums,
                             isSearching = isSearching,
                             currentPlayingId = currentSong?.id,
                             isPlaying = isPlaying,
                             favoriteSongs = favoriteSongs,
+                            followedArtists = followedArtists,
                             onQueryChanged = { viewModel.onSearchQueryChanged(it) },
                             onPlaySong = { song, playlist -> viewModel.playSong(song, playlist) },
                             onOpenSongDetails = { viewModel.openNowPlaying(it) },
-                            onToggleFavorite = { viewModel.toggleFavorite(it) }
+                            onToggleFavorite = { viewModel.toggleFavorite(it) },
+                            onToggleFollowArtist = { viewModel.toggleFollowArtist(it) },
+                            onArtistClick = { artistName ->
+                                viewingArtistName = artistName
+                                viewModel.loadArtistSongs(artistName)
+                            }
                         )
 
                         2 -> FavoritesScreen(
                             favoriteSongs = favoriteSongs,
+                            followedArtists = followedArtists,
+                            historyItems = historyItems,
+                            topArtists = topArtists,
+                            playlists = playlists,
                             currentPlayingId = currentSong?.id,
                             isPlaying = isPlaying,
                             onPlaySong = { song, playlist -> viewModel.playSong(song, playlist) },
                             onOpenSongDetails = { viewModel.openNowPlaying(it) },
-                            onToggleFavorite = { viewModel.toggleFavorite(it) }
+                            onToggleFavorite = { viewModel.toggleFavorite(it) },
+                            onToggleFollowArtist = { viewModel.toggleFollowArtist(it) },
+                            onArtistClick = { artistName ->
+                                viewingArtistName = artistName
+                                viewModel.loadArtistSongs(artistName)
+                            },
+                            deviceSongs = deviceSongs,
+                            isScanningDeviceFiles = isScanningDeviceFiles,
+                            onSyncDeviceFiles = { viewModel.scanAndSyncDeviceAudio() }
                         )
                     }
                 }
             }
         }
 
-        // Customization & Listening History Bottom Sheet
-        if (isCustomizationVisible) {
-            CustomizationBottomSheet(
-                themeMode = themeMode,
-                appearanceMode = appearanceMode,
-                historyItems = historyItems,
-                isClearDialogOpen = isClearHistoryDialogVisible,
-                onSelectTheme = { viewModel.setThemeMode(it) },
-                onSelectAppearance = { viewModel.setAppearanceMode(it) },
-                onRemoveHistoryItem = { viewModel.removeFromHistory(it) },
-                onClearHistoryClick = { viewModel.showClearHistoryDialog(true) },
-                onConfirmClearHistory = { viewModel.clearAllHistory() },
-                onDismissClearHistory = { viewModel.showClearHistoryDialog(false) },
-                onPlaySong = { song -> viewModel.playSong(song) },
-                onDismiss = { viewModel.showCustomizationDialog(false) }
-            )
-        }
-
-        // Full Screen Song Details Overlay (matching Image 5)
+        // Unified Full Screen Player with Tab-Based Navigation (Now Playing & Synced Lyrics)
         AnimatedVisibility(
-            visible = isNowPlayingExpanded && !isLyricsScreenOpen && currentSong != null,
+            visible = isNowPlayingExpanded && currentSong != null,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
         ) {
@@ -336,6 +460,12 @@ fun MusicaApp(
                 isShuffle = isShuffle,
                 isLooping = isLooping,
                 isFavorite = isCurrentFav,
+                selectedTab = playerTab,
+                onTabSelected = { playerTab = it },
+                lyricsData = lyricsData,
+                isLyricsLoading = isLyricsLoading,
+                selectedLanguage = selectedLanguage,
+                onSelectLanguage = { viewModel.setTargetLanguage(it) },
                 onTogglePlayPause = { viewModel.togglePlayPause() },
                 onSeek = { viewModel.seekTo(it) },
                 onSeekBy = { viewModel.seekBy(it) },
@@ -345,8 +475,9 @@ fun MusicaApp(
                 onToggleLoop = { viewModel.toggleLooping() },
                 onToggleFavorite = { currentSong?.let { viewModel.toggleFavorite(it) } },
                 onClose = { viewModel.closeNowPlaying() },
+                onOpenQueue = { viewModel.openQueueDrawer() },
                 onOpenSpotifyEmbed = { viewModel.toggleSpotifyEmbed(true) },
-                onOpenLyrics = { isLyricsScreenOpen = true },
+                onOpenLyrics = { playerTab = PlayerTab.LYRICS },
                 onArtistClick = { artistName ->
                     viewModel.closeNowPlaying()
                     viewModel.loadArtistSongs(artistName)
@@ -355,29 +486,22 @@ fun MusicaApp(
             )
         }
 
-        // Dedicated Lyrics Screen Overlay (matching Image 6)
-        AnimatedVisibility(
-            visible = isLyricsScreenOpen && currentSong != null,
-            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
-        ) {
-            currentSong?.let { song ->
-                LyricsScreen(
-                    song = song,
-                    lyricsData = lyricsData,
-                    isLyricsLoading = isLyricsLoading,
-                    selectedLanguage = selectedLanguage,
-                    currentPositionMs = currentPositionMs,
-                    durationMs = durationMs,
-                    isPlaying = isPlaying,
-                    onSeek = { viewModel.seekTo(it) },
-                    onTogglePlayPause = { viewModel.togglePlayPause() },
-                    onNext = { viewModel.playNext() },
-                    onPrevious = { viewModel.playPrevious() },
-                    onSelectLanguage = { viewModel.setTargetLanguage(it) },
-                    onBack = { isLyricsScreenOpen = false }
-                )
-            }
+        // Playback Queue Drawer accessible from Playback Bar & Now Playing Screen
+        if (isQueueDrawerOpen) {
+            QueueDrawer(
+                currentSong = currentSong,
+                queue = currentQueue,
+                currentIndex = queueCurrentIndex,
+                isPlaying = isPlaying,
+                sheetState = queueSheetState,
+                onDismiss = { viewModel.closeQueueDrawer() },
+                onPlayTrackAt = { index -> viewModel.playTrackFromQueue(index) },
+                onMoveUpcomingUp = { index -> viewModel.moveUpcomingTrackUp(index) },
+                onMoveUpcomingDown = { index -> viewModel.moveUpcomingTrackDown(index) },
+                onRemoveUpcoming = { index -> viewModel.removeUpcomingTrack(index) },
+                onClearUpcoming = { viewModel.clearUpcomingQueue() },
+                onAddRecommended = { viewModel.addRecommendedToQueue() }
+            )
         }
 
         // Spotify Embed Modal Bottom Sheet
@@ -392,6 +516,71 @@ fun MusicaApp(
                     song = currentSong!!,
                     onDismiss = { viewModel.toggleSpotifyEmbed(false) }
                 )
+            }
+        }
+
+        // Firebase Auth & Google Sign-In Modal Bottom Sheet
+        if (showAuthSheet) {
+            AuthBottomSheet(
+                sheetState = authSheetState,
+                userSession = userSession,
+                syncStatus = syncStatus,
+                lastSyncTime = lastSyncTime,
+                isLoading = isAuthLoading,
+                errorMessage = authErrorMessage,
+                onDismiss = {
+                    showAuthSheet = false
+                    viewModel.clearAuthError()
+                },
+                onSignInWithGoogle = { activity ->
+                    viewModel.signInWithGoogle(activity)
+                },
+                onSignOut = {
+                    viewModel.signOut()
+                },
+                onSyncNow = {
+                    viewModel.syncUserData()
+                },
+                favoritesCount = favoriteSongs.size,
+                historyCount = historyItems.size
+            )
+        }
+
+        // Floating Offline Status Bar Overlay
+        AnimatedVisibility(
+            visible = showOfflineStatusBar,
+            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(offlineStatusBarColor)
+                    .statusBarsPadding()
+                    .padding(vertical = 8.dp, horizontal = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = if (isOfflineMode) Icons.Default.CloudOff else Icons.Default.CloudDone,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = offlineStatusBarText,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }

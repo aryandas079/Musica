@@ -108,6 +108,17 @@ interface DeezerApi {
         @Query("limit") limit: Int = 30
     ): DeezerTrackSearchResponse
 
+    @GET("chart/0/tracks")
+    suspend fun getGlobalChartTracks(
+        @Query("limit") limit: Int = 50
+    ): DeezerTrackSearchResponse
+
+    @GET("chart/{genre_id}/tracks")
+    suspend fun getGenreChartTracks(
+        @Path("genre_id") genreId: Long,
+        @Query("limit") limit: Int = 50
+    ): DeezerTrackSearchResponse
+
     @GET("search/artist")
     suspend fun searchArtist(
         @Query("q") query: String,

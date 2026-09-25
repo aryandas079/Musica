@@ -20,10 +20,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,6 +60,8 @@ fun MiniPlayer(
     onPrevious: (() -> Unit)? = null,
     onSeek: ((Long) -> Unit)? = null,
     onExpand: () -> Unit,
+    onOpenQueue: (() -> Unit)? = null,
+    upcomingCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -177,7 +182,7 @@ fun MiniPlayer(
                     // Next button
                     IconButton(
                         onClick = onNext,
-                        modifier = Modifier.size(40.dp).testTag("mini_player_next")
+                        modifier = Modifier.size(36.dp).testTag("mini_player_next")
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipNext,
@@ -185,6 +190,47 @@ fun MiniPlayer(
                             tint = colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp)
                         )
+                    }
+
+                    // Queue Drawer button accessible directly from the playback bar
+                    if (onOpenQueue != null) {
+                        IconButton(
+                            onClick = onOpenQueue,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("playback_bar_queue_button")
+                        ) {
+                            if (upcomingCount > 0) {
+                                BadgedBox(
+                                    badge = {
+                                        Badge(
+                                            containerColor = colorScheme.primary,
+                                            contentColor = colorScheme.onPrimary
+                                        ) {
+                                            Text(
+                                                text = if (upcomingCount > 9) "9+" else "$upcomingCount",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                        contentDescription = "Playback Queue",
+                                        tint = colorScheme.primary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            } else {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                    contentDescription = "Playback Queue",
+                                    tint = colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
                     }
                 }
 

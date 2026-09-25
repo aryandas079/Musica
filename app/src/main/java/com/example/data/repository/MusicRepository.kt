@@ -1,15 +1,19 @@
 package com.example.data.repository
 
 import android.util.Log
+import com.example.data.firebase.FirestoreSyncManager
 import com.example.data.local.CachedLyricsEntity
 import com.example.data.local.CachedSongEntity
 import com.example.data.local.FavoriteSongEntity
 import com.example.data.local.HistorySongEntity
 import com.example.data.local.SongDao
 import com.example.data.remote.DeezerTrackItem
+import com.example.data.remote.GeminiDiscoveryService
 import com.example.data.remote.ItunesTrackItem
 import com.example.data.remote.NetworkClient
 import com.example.model.Artist
+import com.example.model.DiscoveryRecommendation
+import com.example.model.GenreChartData
 import com.example.model.HistoryItem
 import com.example.model.LyricsData
 import com.example.model.Song
@@ -25,6 +29,10 @@ class MusicRepository(
     // In-memory cache for search & lyrics to ensure blazing fast navigation
     private val songCache = mutableMapOf<Long, Song>()
     private val lyricsCache = mutableMapOf<Long, LyricsData>()
+    private val geminiService = GeminiDiscoveryService()
+    val firestoreSync = FirestoreSyncManager()
+
+    var activeUserId: String? = null
 
     val favoriteSongs: Flow<List<Song>> = songDao.getAllFavorites().map { list ->
         list.map { it.toSong() }
@@ -34,23 +42,106 @@ class MusicRepository(
         list.map { HistoryItem(it.historyId, it.toSong(), it.playedAt) }
     }
 
+    val followedArtists: Flow<List<Artist>> = songDao.getAllFollowedArtists().map { list ->
+        list.map { it.toArtist() }
+    }
+
+    val playlists: Flow<List<com.example.data.local.PlaylistEntity>> = songDao.getAllPlaylists()
+
+    fun getSongsForPlaylist(playlistId: Long): Flow<List<Song>> =
+        songDao.getSongsForPlaylist(playlistId).map { list -> list.map { it.toSong() } }
+
+    suspend fun createPlaylist(name: String, description: String = "", coverUrl: String = ""): Long = withContext(Dispatchers.IO) {
+        val entity = com.example.data.local.PlaylistEntity(name = name, description = description, coverUrl = coverUrl)
+        songDao.insertPlaylist(entity)
+    }
+
+    suspend fun deletePlaylist(playlistId: Long) = withContext(Dispatchers.IO) {
+        songDao.deletePlaylist(playlistId)
+    }
+
+    suspend fun addSongToPlaylist(playlistId: Long, song: Song) = withContext(Dispatchers.IO) {
+        val entity = com.example.data.local.PlaylistSongEntity.fromSong(playlistId, song)
+        songDao.insertPlaylistSong(entity)
+    }
+
+    suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
+        songDao.deletePlaylistSong(playlistId, songId)
+    }
+
     fun isFavorite(songId: Long): Flow<Boolean> = songDao.isFavorite(songId)
+
+    fun isArtistFollowed(artistName: String): Flow<Boolean> = songDao.isArtistFollowed(artistName)
 
     suspend fun toggleFavorite(song: Song, cachedLyrics: String? = null) = withContext(Dispatchers.IO) {
         val entity = FavoriteSongEntity.fromSong(song, cachedLyrics)
         songDao.insertFavorite(entity)
+        activeUserId?.let { uid ->
+            firestoreSync.saveFavorite(uid, song)
+        }
     }
 
     suspend fun removeFavorite(songId: Long) = withContext(Dispatchers.IO) {
         songDao.deleteFavorite(songId)
+        activeUserId?.let { uid ->
+            firestoreSync.removeFavorite(uid, songId)
+        }
+    }
+
+    suspend fun followArtist(artist: Artist) = withContext(Dispatchers.IO) {
+        try {
+            songDao.insertFollowedArtist(com.example.data.local.FollowedArtistEntity.fromArtist(artist))
+        } catch (e: Exception) {
+            Log.e("MusicRepository", "Error following artist", e)
+        }
+    }
+
+    suspend fun unfollowArtist(artistName: String) = withContext(Dispatchers.IO) {
+        try {
+            songDao.deleteFollowedArtist(artistName)
+        } catch (e: Exception) {
+            Log.e("MusicRepository", "Error unfollowing artist", e)
+        }
+    }
+
+    suspend fun getArtistWithTopSongs(artistName: String): Artist = withContext(Dispatchers.IO) {
+        val details = getArtistDetails(artistName)
+        val songs = getArtistSongs(artistName)
+        details.copy(topSongs = songs)
     }
 
     suspend fun addToHistory(song: Song) = withContext(Dispatchers.IO) {
         try {
             songDao.deleteHistoryBySongId(song.id)
             songDao.insertHistory(HistorySongEntity.fromSong(song))
+            activeUserId?.let { uid ->
+                firestoreSync.saveHistory(uid, song)
+            }
         } catch (e: Exception) {
             Log.e("MusicRepository", "Error adding song to history", e)
+        }
+    }
+
+    suspend fun syncWithFirestore(userId: String): Int = withContext(Dispatchers.IO) {
+        try {
+            activeUserId = userId
+            val localFavorites = songDao.getAllFavoritesList().map { it.toSong() }
+            val syncedFavorites = firestoreSync.syncAllFavorites(userId, localFavorites)
+            // Insert remote favorites into local room
+            for (song in syncedFavorites) {
+                songDao.insertFavorite(FavoriteSongEntity.fromSong(song))
+            }
+
+            // Sync recent history to Firestore
+            val localHistory = songDao.getAllHistoryList()
+            for (item in localHistory.take(20)) {
+                firestoreSync.saveHistory(userId, item.toSong())
+            }
+
+            syncedFavorites.size
+        } catch (e: Exception) {
+            Log.e("MusicRepository", "Firestore sync failed", e)
+            0
         }
     }
 
@@ -455,6 +546,172 @@ class MusicRepository(
             // Fallback
         }
         getCuratedCatalog()
+    }
+
+    /**
+     * Real-time Billboard & World Top Chart for specific genre with #1 Big Hero Song
+     */
+    suspend fun getGenreChartData(genreName: String): GenreChartData = withContext(Dispatchers.IO) {
+        val cleanGenre = genreName.trim()
+        val genreId = when (cleanGenre.lowercase()) {
+            "pop" -> 132L
+            "hip-hop", "rap" -> 116L
+            "rock" -> 152L
+            "latin" -> 197L
+            "r&b" -> 165L
+            "dance", "electronic", "edm" -> 113L
+            else -> 0L
+        }
+
+        val topArtistsForGenre = when (cleanGenre.lowercase()) {
+            "pop" -> listOf("Taylor Swift", "Sabrina Carpenter", "Billie Eilish", "Bruno Mars", "Dua Lipa", "Ariana Grande", "Ed Sheeran", "Olivia Rodrigo")
+            "hip-hop", "rap" -> listOf("Drake", "Kendrick Lamar", "Travis Scott", "Eminem", "Post Malone", "Future")
+            "rock" -> listOf("Queen", "Coldplay", "Arctic Monkeys", "Linkin Park", "Imagine Dragons", "Harry Styles")
+            "latin" -> listOf("Bad Bunny", "Karol G", "Peso Pluma", "Rauw Alejandro", "J Balvin", "Shakira")
+            "k-pop" -> listOf("BTS", "NewJeans", "BLACKPINK", "Stray Kids", "LE SSERAFIM")
+            "r&b" -> listOf("The Weeknd", "SZA", "Bruno Mars", "Frank Ocean", "Beyonce")
+            else -> listOf("Taylor Swift", "The Weeknd", "Drake", "Billie Eilish", "Sabrina Carpenter", "Bruno Mars", "Bad Bunny")
+        }
+
+        val resolvedArtists = topArtistsForGenre.map { getArtistDetails(it) }
+
+        var songs: List<Song> = emptyList()
+
+        // 1. Try real-time Deezer Chart API
+        try {
+            val chartRes = if (genreId > 0L) {
+                NetworkClient.deezerApi.getGenreChartTracks(genreId, limit = 50)
+            } else {
+                NetworkClient.deezerApi.getGlobalChartTracks(limit = 50)
+            }
+            val mapped = chartRes.data.mapNotNull { it.toSong(cleanGenre) }
+            if (mapped.isNotEmpty()) {
+                mapped.forEach { songCache[it.id] = it }
+                songs = mapped
+            }
+        } catch (e: Exception) {
+            Log.w("MusicRepository", "Deezer chart fetch error: ${e.message}")
+        }
+
+        // 2. Fallback to Billboard search query
+        if (songs.isEmpty()) {
+            try {
+                val searchTerm = if (cleanGenre.equals("All", ignoreCase = true) || cleanGenre.equals("Top Charts", ignoreCase = true)) {
+                    "billboard hot 100 global"
+                } else {
+                    "billboard top $cleanGenre hits"
+                }
+                val deezerSearch = NetworkClient.deezerApi.searchTracks(searchTerm, limit = 35)
+                val mapped = deezerSearch.data.mapNotNull { it.toSong(cleanGenre) }
+                if (mapped.isNotEmpty()) {
+                    mapped.forEach { songCache[it.id] = it }
+                    songs = mapped
+                }
+            } catch (e: Exception) {
+                Log.w("MusicRepository", "Billboard search fetch error: ${e.message}")
+            }
+        }
+
+        // 3. Fallback to iTunes Chart / Search
+        if (songs.isEmpty()) {
+            try {
+                val itunesRes = NetworkClient.itunesApi.searchSongs("top $cleanGenre billboard", limit = 30)
+                val mapped = itunesRes.results.mapNotNull { it.toSong() }
+                if (mapped.isNotEmpty()) {
+                    mapped.forEach { songCache[it.id] = it }
+                    songs = mapped
+                }
+            } catch (e: Exception) {
+                Log.w("MusicRepository", "iTunes chart fallback error: ${e.message}")
+            }
+        }
+
+        // 4. Catalog fallback
+        if (songs.isEmpty()) {
+            songs = getCuratedCatalog().filter {
+                it.genre.equals(cleanGenre, ignoreCase = true) || cleanGenre.equals("All", ignoreCase = true)
+            }.ifEmpty { getTrendingHits() }
+        }
+
+        val hero = songs.firstOrNull()
+        GenreChartData(
+            genreName = cleanGenre,
+            description = "Real-time World Charts & Billboard Hot Top Tracks",
+            heroSong = hero,
+            topSongs = songs,
+            topArtists = resolvedArtists,
+            updateTime = "Live Billboard & Global 200 Charts"
+        )
+    }
+
+    /**
+     * Dynamically recommends and ranks homepage artists based on listening history & user taste
+     */
+    suspend fun getDynamicTopArtists(
+        historySongs: List<Song>,
+        favoriteSongs: List<Song>,
+        followedArtists: List<Artist>
+    ): List<Artist> = withContext(Dispatchers.IO) {
+        val baseTop = getTopArtists()
+
+        // 1. Gather artist names from recent listening history
+        val recentHistoryArtistNames = historySongs.map { it.artist.trim() }.filter { it.isNotBlank() }
+        val artistPlayCounts = recentHistoryArtistNames.groupingBy { it.lowercase() }.eachCount()
+
+        // 2. Gather artist names from favorite songs
+        val favoriteArtistNames = favoriteSongs.map { it.artist.trim() }.filter { it.isNotBlank() }
+
+        // 3. Gather user's followed artists
+        val followedNames = followedArtists.map { it.name.trim() }.filter { it.isNotBlank() }
+
+        // Determine user's top genres from history
+        val userGenres = historySongs.map { it.genre.lowercase() }
+
+        // Prioritized list of artist names
+        val prioritizedNames = mutableListOf<String>()
+
+        // Add history artists sorted by play frequency & recency
+        val sortedHistoryArtists = recentHistoryArtistNames.distinctBy { it.lowercase() }
+            .sortedByDescending { artistPlayCounts[it.lowercase()] ?: 0 }
+        prioritizedNames.addAll(sortedHistoryArtists)
+
+        // Add followed artists
+        for (f in followedNames) {
+            if (prioritizedNames.none { it.equals(f, ignoreCase = true) }) {
+                prioritizedNames.add(f)
+            }
+        }
+
+        // Add favorite artists
+        for (fav in favoriteArtistNames.distinctBy { it.lowercase() }) {
+            if (prioritizedNames.none { it.equals(fav, ignoreCase = true) }) {
+                prioritizedNames.add(fav)
+            }
+        }
+
+        // Add genre-matched top artists
+        val genreMatched = baseTop.filter { artist ->
+            userGenres.any { g -> artist.genre.contains(g, ignoreCase = true) }
+        }
+        for (gArtist in genreMatched) {
+            if (prioritizedNames.none { it.equals(gArtist.name, ignoreCase = true) }) {
+                prioritizedNames.add(gArtist.name)
+            }
+        }
+
+        // Fill remaining with global top artists
+        for (artist in baseTop) {
+            if (prioritizedNames.none { it.equals(artist.name, ignoreCase = true) }) {
+                prioritizedNames.add(artist.name)
+            }
+        }
+
+        // Resolve artist details (with verified avatars and monthly listeners)
+        prioritizedNames.take(12).map { name ->
+            val details = getArtistDetails(name)
+            val isFollowed = followedArtists.any { it.name.equals(name, ignoreCase = true) }
+            details.copy(isFollowed = isFollowed)
+        }
     }
 
     /**
@@ -953,7 +1210,7 @@ class MusicRepository(
                 artist = "YOASOBI",
                 album = "THE BOOK",
                 artworkUrl = "https://cdn-images.dzcdn.net/images/cover/aa0ebef28753227eb0e334a1ebfe4008/500x500-000000-80-0-0.jpg",
-                previewUrl = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/44/c7/4f/44c74f0d-72dc-6143-d4d0-ba14d661ca0d/mzaf_9566898362556366703.plus.aac.p.m4a",
+                previewUrl = "https://cdns-preview-d.dzcdn.net/stream/c-deda7fac944b147b44421e7c53ef954f-14.mp3",
                 durationMs = 256000L,
                 genre = "J-Pop",
                 releaseYear = "2021",
@@ -987,5 +1244,50 @@ class MusicRepository(
                 artistImageUrl = "https://cdn-images.dzcdn.net/images/artist/581693b4724a7fcfa754455101e13a44/500x500-000000-80-0-0.jpg"
             )
         )
+    }
+
+    suspend fun getGeminiDiscoveryRecommendations(
+        history: List<HistoryItem>,
+        favorites: List<Song>
+    ): List<DiscoveryRecommendation> = withContext(Dispatchers.IO) {
+        val rawRecs = geminiService.generateRecommendations(history, favorites)
+        val result = mutableListOf<DiscoveryRecommendation>()
+
+        for (rec in rawRecs) {
+            val existing = songCache.values.firstOrNull {
+                it.title.contains(rec.title, ignoreCase = true) || rec.title.contains(it.title, ignoreCase = true)
+            } ?: getTrendingHits().firstOrNull {
+                it.title.contains(rec.title, ignoreCase = true) || rec.title.contains(it.title, ignoreCase = true)
+            }
+
+            val resolvedSong = if (existing != null) {
+                existing
+            } else {
+                val searchRes = try {
+                    searchSongs("${rec.title} ${rec.artist}")
+                } catch (e: Exception) {
+                    emptyList()
+                }
+                searchRes.firstOrNull() ?: Song(
+                    id = kotlin.math.abs((rec.title + rec.artist).hashCode().toLong()),
+                    title = rec.title,
+                    artist = rec.artist,
+                    album = "${rec.title} - Single",
+                    artworkUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/b5/92/bb/b592bb72-52e3-e756-9b26-9f56d08f47ab/16UMGIM67864.rgb.jpg/600x600bb.jpg",
+                    previewUrl = "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/67/10/16/67101606-3869-ca44-6c03-e13d6322cb51/mzaf_1135399237022217274.plus.aac.p.m4a",
+                    genre = rec.vibe
+                )
+            }
+
+            result.add(
+                DiscoveryRecommendation(
+                    song = resolvedSong,
+                    aiReason = rec.reason,
+                    vibeTag = rec.vibe,
+                    matchPercentage = rec.matchPercentage
+                )
+            )
+        }
+        result
     }
 }

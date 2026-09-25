@@ -60,13 +60,43 @@ data class Artist(
     val name: String,
     val imageUrl: String,
     val genre: String,
-    val topHitsCount: String
+    val topHitsCount: String,
+    val isFollowed: Boolean = false,
+    val topSongs: List<Song> = emptyList()
+)
+
+data class Album(
+    val id: Long = 0L,
+    val title: String,
+    val artist: String,
+    val artworkUrl: String,
+    val releaseYear: String = "2024",
+    val genre: String = "Pop",
+    val trackCount: Int = 0,
+    val tracks: List<Song> = emptyList(),
+    val topFeaturedSongs: List<Song> = emptyList()
 )
 
 data class HistoryItem(
     val historyId: Long,
     val song: Song,
     val playedAt: Long
+)
+
+data class DiscoveryRecommendation(
+    val song: Song,
+    val aiReason: String,
+    val vibeTag: String,
+    val matchPercentage: Int = 95
+)
+
+data class GenreChartData(
+    val genreName: String,
+    val description: String,
+    val heroSong: Song?,
+    val topSongs: List<Song>,
+    val topArtists: List<Artist>,
+    val updateTime: String = "Live Billboard & Global 200 Charts"
 )
 
 enum class AppThemeMode {

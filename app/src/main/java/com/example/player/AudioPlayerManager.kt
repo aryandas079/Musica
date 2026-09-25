@@ -44,21 +44,29 @@ class AudioPlayerManager(private val context: Context) {
     private val _isLooping = MutableStateFlow(false)
     val isLooping: StateFlow<Boolean> = _isLooping.asStateFlow()
 
+    private val _currentQueue = MutableStateFlow<List<Song>>(emptyList())
+    val currentQueue: StateFlow<List<Song>> = _currentQueue.asStateFlow()
+
+    private val _currentIndex = MutableStateFlow(-1)
+    val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
+
     private var currentPlaylist = mutableListOf<Song>()
-    private var currentIndex = -1
+    private var currentIndexInternal = -1
 
     fun playSong(song: Song, playlist: List<Song> = emptyList()) {
         if (playlist.isNotEmpty()) {
             currentPlaylist = playlist.toMutableList()
-            currentIndex = currentPlaylist.indexOfFirst { it.id == song.id }
-            if (currentIndex == -1) {
+            currentIndexInternal = currentPlaylist.indexOfFirst { it.id == song.id }
+            if (currentIndexInternal == -1) {
                 currentPlaylist.add(0, song)
-                currentIndex = 0
+                currentIndexInternal = 0
             }
         } else if (_currentSong.value?.id != song.id) {
             currentPlaylist = mutableListOf(song)
-            currentIndex = 0
+            currentIndexInternal = 0
         }
+        _currentQueue.value = currentPlaylist.toList()
+        _currentIndex.value = currentIndexInternal
 
         if (_currentSong.value?.id == song.id && mediaPlayer != null) {
             if (!_isPlaying.value) {
@@ -204,12 +212,13 @@ class AudioPlayerManager(private val context: Context) {
         if (currentPlaylist.isEmpty()) return
         if (_isShuffle.value && currentPlaylist.size > 1) {
             var nextIndex = (0 until currentPlaylist.size).random()
-            if (nextIndex == currentIndex) nextIndex = (nextIndex + 1) % currentPlaylist.size
-            currentIndex = nextIndex
+            if (nextIndex == currentIndexInternal) nextIndex = (nextIndex + 1) % currentPlaylist.size
+            currentIndexInternal = nextIndex
         } else {
-            currentIndex = (currentIndex + 1) % currentPlaylist.size
+            currentIndexInternal = (currentIndexInternal + 1) % currentPlaylist.size
         }
-        val nextSong = currentPlaylist.getOrNull(currentIndex) ?: return
+        _currentIndex.value = currentIndexInternal
+        val nextSong = currentPlaylist.getOrNull(currentIndexInternal) ?: return
         playSong(nextSong, currentPlaylist)
     }
 
@@ -219,9 +228,115 @@ class AudioPlayerManager(private val context: Context) {
             seekTo(0L)
             return
         }
-        currentIndex = if (currentIndex - 1 < 0) currentPlaylist.size - 1 else currentIndex - 1
-        val prevSong = currentPlaylist.getOrNull(currentIndex) ?: return
+        currentIndexInternal = if (currentIndexInternal - 1 < 0) currentPlaylist.size - 1 else currentIndexInternal - 1
+        _currentIndex.value = currentIndexInternal
+        val prevSong = currentPlaylist.getOrNull(currentIndexInternal) ?: return
         playSong(prevSong, currentPlaylist)
+    }
+
+    fun reorderUpcoming(fromUpcomingIndex: Int, toUpcomingIndex: Int) {
+        val startUpcoming = currentIndexInternal + 1
+        if (startUpcoming >= currentPlaylist.size) return
+        val absFrom = startUpcoming + fromUpcomingIndex
+        val absTo = startUpcoming + toUpcomingIndex
+        if (absFrom in startUpcoming until currentPlaylist.size && absTo in startUpcoming until currentPlaylist.size) {
+            val moved = currentPlaylist.removeAt(absFrom)
+            currentPlaylist.add(absTo, moved)
+            _currentQueue.value = currentPlaylist.toList()
+        }
+    }
+
+    fun moveUpcomingUp(upcomingIndex: Int) {
+        if (upcomingIndex > 0) {
+            reorderUpcoming(upcomingIndex, upcomingIndex - 1)
+        }
+    }
+
+    fun moveUpcomingDown(upcomingIndex: Int) {
+        val upcomingSize = (currentPlaylist.size - (currentIndexInternal + 1)).coerceAtLeast(0)
+        if (upcomingIndex < upcomingSize - 1) {
+            reorderUpcoming(upcomingIndex, upcomingIndex + 1)
+        }
+    }
+
+    fun removeUpcoming(upcomingIndex: Int) {
+        val absIndex = currentIndexInternal + 1 + upcomingIndex
+        if (absIndex in (currentIndexInternal + 1) until currentPlaylist.size) {
+            currentPlaylist.removeAt(absIndex)
+            _currentQueue.value = currentPlaylist.toList()
+        }
+    }
+
+    fun removeTrackById(songId: Long) {
+        val index = currentPlaylist.indexOfFirst { it.id == songId }
+        if (index == -1) return
+        if (index == currentIndexInternal) {
+            if (currentPlaylist.size > 1) {
+                val nextIdx = (currentIndexInternal + 1) % currentPlaylist.size
+                val nextSong = currentPlaylist[nextIdx]
+                currentPlaylist.removeAt(index)
+                currentIndexInternal = currentPlaylist.indexOfFirst { it.id == nextSong.id }.coerceAtLeast(0)
+                _currentQueue.value = currentPlaylist.toList()
+                _currentIndex.value = currentIndexInternal
+                playSong(nextSong, currentPlaylist)
+            } else {
+                currentPlaylist.clear()
+                currentIndexInternal = -1
+                _currentQueue.value = emptyList()
+                _currentIndex.value = -1
+                _currentSong.value = null
+                _currentPositionMs.value = 0L
+                _isPlaying.value = false
+                releaseMediaPlayer()
+            }
+        } else {
+            if (index < currentIndexInternal) {
+                currentIndexInternal--
+            }
+            currentPlaylist.removeAt(index)
+            _currentQueue.value = currentPlaylist.toList()
+            _currentIndex.value = currentIndexInternal
+        }
+    }
+
+    fun clearUpcoming() {
+        if (currentIndexInternal in currentPlaylist.indices) {
+            currentPlaylist = currentPlaylist.subList(0, currentIndexInternal + 1).toMutableList()
+            _currentQueue.value = currentPlaylist.toList()
+        }
+    }
+
+    fun playTrackAtQueueIndex(queueIndex: Int) {
+        if (queueIndex in currentPlaylist.indices) {
+            currentIndexInternal = queueIndex
+            _currentIndex.value = currentIndexInternal
+            val song = currentPlaylist[queueIndex]
+            playSong(song, currentPlaylist)
+        }
+    }
+
+    fun addToQueue(song: Song, playNext: Boolean = false) {
+        if (currentPlaylist.isEmpty()) {
+            playSong(song, listOf(song))
+        } else if (playNext) {
+            val insertIdx = (currentIndexInternal + 1).coerceAtMost(currentPlaylist.size)
+            currentPlaylist.add(insertIdx, song)
+            _currentQueue.value = currentPlaylist.toList()
+        } else {
+            currentPlaylist.add(song)
+            _currentQueue.value = currentPlaylist.toList()
+        }
+    }
+
+    fun addAllToQueue(songs: List<Song>) {
+        if (currentPlaylist.isEmpty()) {
+            if (songs.isNotEmpty()) {
+                playSong(songs.first(), songs)
+            }
+        } else {
+            currentPlaylist.addAll(songs)
+            _currentQueue.value = currentPlaylist.toList()
+        }
     }
 
     fun toggleShuffle() {
